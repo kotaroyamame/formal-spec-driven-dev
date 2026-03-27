@@ -1,0 +1,479 @@
+# Multi-Agent Orchestration Configuration Template
+#
+# This YAML file defines agent roles, responsibilities, and data flow for a formal-specification-driven
+# multi-agent development workflow. Use this template to configure how multiple AI agents coordinate
+# around formal specifications (VDM-SL).
+#
+# Key Principle: Agents communicate through formal specifications (contracts), not direct code sharing.
+# Each agent needs only:
+#   1. Their module specification (VDM-SL)
+#   2. Dependency module interface specifications (postconditions → preconditions)
+#   3. Relevant phase-specific prompts (phase1-4)
+
+---
+# Metadata about this orchestration setup
+orchestration:
+  name: "Formal Specification Driven Development"
+  version: "1.0"
+  created_date: "2024-01-01"
+  description: "Multi-agent workflow where formal specs (VDM-SL) serve as contracts between modules"
+
+  # Phases: each phase has specific agents and outputs
+  # Phase 1: Human + Architect → System specification + module decomposition
+  # Phase 2-4: Parallel module agents → Independent development with formal contracts
+  phases:
+    phase1:
+      name: "System Architecture & Specification"
+      duration_estimate: "1-3 days"
+      stakeholders: ["tech_lead", "domain_expert"]
+      focus: "Define system boundary, business rules, and module decomposition"
+
+    phase2:
+      name: "Module Design"
+      duration_estimate: "1-2 days per module"
+      stakeholders: ["module_agent"]
+      focus: "Design module interfaces (pre/post conditions) based on arch spec"
+
+    phase3:
+      name: "Implementation"
+      duration_estimate: "2-5 days per module"
+      stakeholders: ["module_agent", "integration_agent"]
+      focus: "Generate code from specifications, self-test against spec"
+
+    phase4:
+      name: "Integration & Verification"
+      duration_estimate: "1-2 days"
+      stakeholders: ["integration_agent"]
+      focus: "Verify composability (A.post ⇒ B.pre), cross-module contracts"
+
+---
+# AGENT DEFINITIONS
+agents:
+
+  # ==== ARCHITECT AGENT (Phase 1) ====
+  architect_agent:
+    id: "architect"
+    role: "Formal Specification Architect"
+    phase: 1
+    interaction_model: "Human-in-the-loop dialogue"
+
+    description: |
+      Elicits requirements from domain experts/tech leads through structured dialogue.
+      Produces formal VDM-SL specifications that define:
+      - System types and invariants (business rules)
+      - Module boundaries and responsibilities
+      - Inter-module contracts (interfaces)
+
+      This agent acts as a bridge between business requirements and formal notation.
+
+    # What inputs does this agent need?
+    context_requirements:
+      - business_requirements_doc: "Description of what the system should do"
+      - domain_constraints: "Non-functional requirements, regulations, performance needs"
+      - existing_architecture: "Existing systems, legacy integrations (if any)"
+      - success_criteria: "How will we measure if this is correct?"
+
+    # What outputs does this agent produce?
+    outputs:
+      - system_spec_vdmsl: "Complete VDM-SL specification of the system"
+      - module_decomposition: "List of modules, boundaries, and responsibilities"
+      - interface_contracts: "Pre/post conditions for each module's public operations"
+      - assumptions_and_decisions: "Rationale for design choices"
+
+    # Constraints and safeguards
+    constraints:
+      - must_use_vdmsl: "Output must be syntactically valid VDM-SL (machine-checkable)"
+      - no_implementation_details: "Specs describe WHAT, not HOW (no algorithms)"
+      - explicit_invariants: "All business rules must be captured in type invariants"
+      - composability_focus: "Design interfaces so A.postcond ⇒ B.precond is verifiable"
+
+    # What prompts guide this agent?
+    prompts:
+      - system: "templates/prompts/phase1-specification.md"
+        role: "Formal specification architect"
+        instructions: "Dialogue with stakeholder to build formal spec"
+
+    # Success metrics
+    acceptance_criteria:
+      - vdmsl_parses: "Generated VDM-SL is syntactically valid"
+      - completeness: "All module interfaces fully specified"
+      - clarity: "Stakeholder confirms spec matches intent"
+      - no_ambiguity: "Pre/post conditions are precise, not vague"
+
+    # Human handoff points (where tech lead reviews/approves)
+    human_checkpoints:
+      - after_domain_types: "Review proposed types and invariants"
+      - after_module_boundaries: "Confirm module decomposition makes sense"
+      - after_interface_contracts: "Verify contracts between modules are correct"
+      - final_approval: "Sign off on complete specification"
+
+  # ==== MODULE AGENT TEMPLATE (Phase 2-4, one per module) ====
+  module_agent_template:
+    id: "module_{{ module_name }}"
+    role: "Module Implementation Agent"
+    phases: [2, 3, 4]
+    interaction_model: "Autonomous with periodic human review"
+
+    description: |
+      Develops a single module in isolation based on:
+      1. Its own module specification (from Phase 1)
+      2. Interface specifications of dependent modules
+
+      Works through Phase 2 (design), Phase 3 (implementation), Phase 4 (verification)
+      independently, but coordinates with other module agents via formal contracts.
+
+      Key: This agent only needs its own spec + dependency interface specs.
+      It does NOT need to know about other modules' internal implementation.
+
+    # Template variables (fill these in when instantiating for a real module)
+    module_specifics:
+      module_name: "{{ e.g., order, inventory, payment }}"
+      vdmsl_spec_file: "templates/.vdm/{{ module_name }}-module.vdmsl"
+      responsible_team: "{{ e.g., order team, payments team }}"
+
+    # What inputs does this agent need?
+    context_requirements:
+      - own_module_spec: "This module's complete VDM-SL specification"
+      - dependency_interface_specs: "Postconditions of modules this one depends on"
+      - shared_data_model: "Shared types and invariants (from Phase 1)"
+      - platform_constraints: "Technology stack, frameworks, conventions"
+      - cross_cutting_concerns: "Error handling, logging, auth patterns"
+
+    # What outputs does this agent produce?
+    outputs:
+      - design_document: "Phase 2: Detailed design with operation decomposition"
+      - implementation_code: "Phase 3: Source code (Python, TypeScript, etc.)"
+      - unit_tests: "Phase 3: Tests derived from preconditions"
+      - verification_report: "Phase 4: Self-verification against spec"
+
+    constraints:
+      - spec_compliance: "Implementation must satisfy all pre/post conditions"
+      - composability: "Operations must respect dependency interface contracts"
+      - no_side_effects: "Only interact with dependencies via formal contracts"
+      - type_safety: "Must use strongly-typed implementation language"
+
+    prompts:
+      - system_phase2: "templates/prompts/phase2-design.md"
+        context_for_agent: "Own module spec + dependency interface specs"
+
+      - system_phase3: "templates/prompts/phase3-implementation.md"
+        context_for_agent: "Design doc + own module spec"
+
+      - system_phase4: "templates/prompts/phase4-verification.md"
+        context_for_agent: "Implementation + own module spec + integration spec"
+
+    acceptance_criteria:
+      - spec_verified: "Code satisfies preconditions and delivers postconditions"
+      - dependency_contracts_satisfied: "Dependencies' postconditions match this module's preconditions"
+      - tests_pass: "All auto-generated tests pass"
+      - code_review: "Human reviewer approves implementation"
+
+    human_checkpoints:
+      - design_review: "After Phase 2: confirm design approach"
+      - code_review: "After Phase 3: code quality and spec compliance"
+      - integration_readiness: "Before Phase 4: ready to integrate?"
+
+  # ==== INTEGRATION AGENT (Phase 4) ====
+  integration_agent:
+    id: "integration"
+    role: "Integration & Verification Agent"
+    phase: 4
+    interaction_model: "Autonomous with human escalation"
+
+    description: |
+      After all modules are implemented, verifies that modules compose correctly.
+
+      Primary responsibility: Verify that for every inter-module call,
+      the caller's postcondition ⇒ callee's precondition.
+
+      This is the "contract verification" step — if all modules satisfy their
+      specs, and contracts verify, the system works.
+
+    context_requirements:
+      - all_module_implementations: "Code from all module agents"
+      - all_module_specs: "VDM-SL specifications"
+      - integration_test_spec: "Formal spec for end-to-end scenarios"
+      - deployment_plan: "How modules will be deployed and interact"
+
+    outputs:
+      - composability_report: "Which module pairs have verified contracts"
+      - integration_tests: "End-to-end tests based on system spec"
+      - deployment_checklist: "Go-no-go decision"
+      - issues_log: "Any contract violations, with remediation"
+
+    constraints:
+      - no_implementation_changes: "Cannot modify module code without approval"
+      - focus_on_contracts: "Verify A.post ⇒ B.pre, not internal logic"
+      - traceability: "Every test traces back to formal spec"
+
+    prompts:
+      - system: "templates/prompts/phase4-verification.md"
+        role: "Integration verification specialist"
+
+    acceptance_criteria:
+      - all_contracts_verified: "All inter-module calls satisfy contracts"
+      - integration_tests_pass: "System-level scenarios work end-to-end"
+      - no_surprises: "Behavior matches formal spec"
+
+---
+# DATA FLOW & HANDOFF POINTS
+#
+# Describes how agents hand off work and what data flows between them.
+# The KEY insight: agents don't hand off code, they hand off specifications.
+
+data_flow:
+
+  # Phase 1 → Phase 2 handoff
+  phase1_to_phase2:
+    from: "architect_agent"
+    to: "module_agent_template (for each module)"
+    what_is_passed:
+      - system_spec_vdmsl: "Complete formal spec from Phase 1"
+      - module_spec_extract: "Extract of spec relevant to this module"
+      - interface_contracts: "Pre/post conditions for this module's operations"
+      - dependency_interface_specs: "Interface specs of modules this depends on"
+      - phase2_prompt: "Design prompt with context"
+    verification:
+      - "Architect agent confirms spec is correct before handoff"
+      - "Each module agent confirms they understand their spec"
+
+  # Phase 2 → Phase 3 handoff (within same agent)
+  phase2_to_phase3:
+    from: "module_agent"
+    to: "module_agent (same agent, next phase)"
+    what_is_passed:
+      - design_document: "Detailed design from Phase 2"
+      - spec: "Own module spec (unchanged)"
+      - phase3_prompt: "Implementation prompt with design context"
+    verification:
+      - "Human reviewer approves design"
+
+  # Phase 3 → Phase 4 handoff
+  phase3_to_phase4:
+    from: "module_agent (all modules)"
+    to: "integration_agent"
+    what_is_passed:
+      - implementation_code: "Source code from all modules"
+      - unit_tests: "Tests from each module"
+      - spec_compliance_report: "Each module's self-verification"
+      - integration_spec: "System-level formal spec"
+    verification:
+      - "Each module agent confirms code satisfies their spec"
+      - "Integration agent reviews all inputs before starting"
+
+---
+# MODULE BOUNDARIES & DECOMPOSITION
+#
+# Template for how to define module boundaries. Use the architect agent's output
+# to fill this in for your specific system.
+
+module_template:
+  name: "{{ ModuleName }}"
+
+  # One-line description of what this module does
+  responsibility: "{{ Clear statement of what this module owns }}"
+
+  # Module spec file (where the VDM-SL lives)
+  specification_file: "specs/.vdm/{{ module_name }}-module.vdmsl"
+
+  # What operations does this module expose?
+  public_operations:
+    - operation_name: "{{ e.g., create_order }}"
+      precondition: "{{ From VDM-SL: what must be true before calling }}"
+      postcondition: "{{ From VDM-SL: what will be true after }}"
+      side_effects: "{{ What gets modified/stored }}"
+      dependencies: "{{ Which other modules does this call }}"
+
+    # Repeat for each public operation...
+
+  # What modules does this depend on?
+  dependencies:
+    - module_name: "{{ e.g., inventory }}"
+      calls_operations: ["{{ operation names }}"]
+      used_for: "{{ Why we need this dependency }}"
+      contract_verification: "Postcond of inventory ops must match our preconds"
+
+  # What invariants must always hold in this module?
+  invariants:
+    - "{{ e.g., Every order must have a valid customer ID }}"
+    - "{{ e.g., Order total cannot be negative }}"
+
+  # Testing strategy for this module
+  testing:
+    unit_tests_derived_from: "Preconditions and postconditions of operations"
+    integration_tests: "When this module calls dependencies"
+    acceptance_criteria: "Code satisfies spec, contracts verify"
+
+---
+# SHARED DATA MODEL
+#
+# Types and invariants that span multiple modules.
+# These come from Phase 1 (architect agent) and are shared with all Phase 2-4 agents.
+
+shared_data_model:
+  location: "specs/.vdm/shared-types.vdmsl"
+  description: |
+    Contains type definitions and invariants that multiple modules depend on.
+    Examples:
+    - Customer type (used by order, billing, auth modules)
+    - Product type (used by inventory, order, catalog modules)
+    - Money type (used by payment, billing, order modules)
+
+  governance:
+    - "Changes to shared types require architect agent + human approval"
+    - "All module agents must be notified of changes"
+    - "Module agents verify their contracts still hold after changes"
+
+---
+# CROSS-CUTTING CONCERNS
+#
+# Patterns that span multiple modules (error handling, logging, auth, etc.)
+# Define these in Phase 1, share with all agents in Phase 2+
+
+cross_cutting_concerns:
+
+  error_handling:
+    spec_location: "specs/.vdm/error-contract.vdmsl"
+    description: "Standard error types and recovery patterns"
+    shared_by: "All modules"
+    defined_in_phase: 1
+    used_in_phases: [2, 3, 4]
+
+  logging:
+    spec_location: "specs/.vdm/logging-contract.vdmsl"
+    description: "What gets logged, when, at what level"
+    shared_by: "All modules"
+    defined_in_phase: 1
+    used_in_phases: [2, 3, 4]
+
+  authentication_authorization:
+    spec_location: "specs/.vdm/auth-contract.vdmsl"
+    description: "How auth is verified, what roles can do what"
+    shared_by: "Modules that handle user data"
+    defined_in_phase: 1
+    used_in_phases: [2, 3, 4]
+
+  rate_limiting:
+    spec_location: "specs/.vdm/rate-limit-contract.vdmsl"
+    description: "Request rate limits per user/API key"
+    shared_by: "External-facing modules"
+    defined_in_phase: 1
+    used_in_phases: [2, 3, 4]
+
+---
+# HUMAN DECISION POINTS & ESCALATION
+#
+# Defines when agents should hand off to humans and what questions to ask.
+
+human_decision_points:
+
+  after_phase1_complete:
+    question: "Is this specification complete and correct?"
+    who_decides: "Tech lead, domain expert, architect agent"
+    escalation_triggers:
+      - "Spec is ambiguous or incomplete"
+      - "Module decomposition seems wrong"
+      - "Contracts are circular or impossible to satisfy"
+    fallback: "Return to architect agent for clarification"
+
+  after_phase2_per_module:
+    question: "Is this module's design approach sound?"
+    who_decides: "Tech lead, module agent"
+    escalation_triggers:
+      - "Design violates constraints"
+      - "Contract dependencies seem problematic"
+      - "Estimated complexity seems wrong"
+    fallback: "Redesign with architect agent input"
+
+  after_phase3_per_module:
+    question: "Does implementation satisfy spec?"
+    who_decides: "Tech lead, code reviewer"
+    escalation_triggers:
+      - "Code doesn't match design"
+      - "Spec compliance is questionable"
+      - "Tests reveal unexpected behavior"
+    fallback: "Module agent fixes issues and resubmits"
+
+  after_phase4_complete:
+    question: "Can we deploy?"
+    who_decides: "Tech lead, integration agent"
+    escalation_triggers:
+      - "Contract verification failed somewhere"
+      - "Integration tests reveal systemic issues"
+      - "Performance doesn't meet requirements"
+    fallback: "Identify which module needs rework; repeat Phase 3/4"
+
+---
+# TOOLING & IMPLEMENTATION
+#
+# Guidance on how to implement this orchestration with available tools.
+# See workflow.md for detailed implementation strategies.
+
+tooling:
+
+  vdmsl_validation:
+    tool: "Overture IDE or command-line type checker"
+    purpose: "Validate that specs are syntactically correct VDM-SL"
+    when: "After architect agent produces spec"
+
+  prompt_delivery:
+    tools:
+      - "Claude Projects (for persistent context)"
+      - "Claude API with custom orchestration script"
+      - "Custom multi-turn conversation framework"
+    recommendation: "Claude Projects for small teams, custom script for automation"
+
+  specification_diff:
+    tool: "Text diff tools (diff, meld, VS Code)"
+    purpose: "Track changes to specs between phases"
+    when: "When specs are updated between phases"
+
+  contract_verification:
+    tool: "Manual review + VDM-SL model checker (if available)"
+    purpose: "Verify A.post ⇒ B.pre for each inter-module call"
+    when: "Phase 4, before integration testing"
+
+  version_control:
+    tool: "Git (recommended)"
+    structure: "One branch per module + main for integration"
+    purpose: "Track specs and code evolution"
+
+---
+# EXAMPLE: E-COMMERCE ORDER SYSTEM
+#
+# Here's what this orchestration looks like for a real system (from examples/).
+# Use this as a template for your own system.
+
+example_ecommerce:
+  system_name: "E-Commerce Order Processing"
+
+  modules:
+    - name: "order"
+      responsibility: "Manage order creation, modification, lifecycle"
+      dependencies: ["inventory", "payment"]
+
+    - name: "inventory"
+      responsibility: "Track product stock levels"
+      dependencies: []
+
+    - name: "payment"
+      responsibility: "Process payments and refunds"
+      dependencies: []
+
+  # After Phase 1, architect agent produces specs for all three modules
+  # + inter-module contracts, e.g.:
+  #   - order.create_order postcondition ⇒ inventory.check_stock precondition
+  #   - order.finalize_order postcondition ⇒ payment.charge precondition
+
+  # Phase 2-4: Three module agents work in parallel
+  #   - order agent: designs order creation flow
+  #   - inventory agent: designs stock management
+  #   - payment agent: designs payment processing
+
+  # Each module agent knows only their spec + specs of modules they call
+  # They don't know how those modules work internally
+
+  # Phase 4: integration agent verifies all contracts
+  #   - order → inventory contract verified
+  #   - order → payment contract verified
+  #   - If all contracts verified + tests pass, system is ready

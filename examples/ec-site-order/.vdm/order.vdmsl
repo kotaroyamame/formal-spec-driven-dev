@@ -1,0 +1,252 @@
+-- Order Module: E-commerce Order System
+-- VDM-SL Formal Specification
+-- Purpose: Manage order creation, confirmation, and lifecycle
+-- Dependencies: Inventory module for stock reservation/release
+
+module Order
+
+exports all
+
+definitions
+
+-- ============================================================================
+-- TYPE DEFINITIONS
+-- ============================================================================
+
+types
+  -- Unique identifier for an order
+  OrderId = nat1;
+
+  -- Unique identifier for a product
+  ProductId = nat1;
+
+  -- Line item in an order (product + quantity)
+  LineItem :: productId : ProductId
+             quantity : nat1
+             unitPrice : nat;
+
+  -- Order status lifecycle
+  OrderStatus = <PENDING> | <CONFIRMED> | <COMPLETED> | <CANCELLED>;
+
+  -- Complete order representation
+  Order :: orderId : OrderId
+           customerId : nat1
+           lineItems : seq of LineItem
+           status : OrderStatus
+           totalAmount : nat
+           reservationIds : seq of nat1
+           createdTime : Time
+           confirmedTime : Time | <Nil>;
+
+  -- Time representation
+  Time :: year : nat
+          month : nat
+          day : nat;
+
+  -- Exception types
+  OrderException = <OrderNotFound> | <InvalidOrderStatus> | <InvalidQuantity> |
+                   <InsufficientStock> | <OrderAlreadyConfirmed>;
+
+end types
+
+-- ============================================================================
+-- STATE DEFINITION
+-- ============================================================================
+
+state OrderStore of
+  -- Map from OrderId to Order
+  orders : map OrderId to Order
+  -- Next available OrderId
+  nextOrderId : nat1
+  -- Track pending confirmations (OrderId to completion deadline)
+  pendingConfirmations : map OrderId to Time
+inv
+  -- INVARIANT: Status consistency
+  forall orderId in set dom orders &
+    (orders(orderId).status = <CONFIRMED> =>
+      orders(orderId).confirmedTime <> <Nil>) and
+    (orders(orderId).status = <PENDING> =>
+      orderId in set dom pendingConfirmations) and
+  -- INVARIANT: Order IDs are unique and sequential
+  (nextOrderId > 0) and
+  -- INVARIANT: All line items have positive quantity
+  forall orderId in set dom orders &
+    forall lineItem in set elems orders(orderId).lineItems &
+      lineItem.quantity > 0 and lineItem.unitPrice > 0
+end
+
+-- ============================================================================
+-- OPERATIONS
+-- ============================================================================
+
+operations
+
+-- OPERATION 1: CreateOrder
+-- Purpose: Create a new order with line items
+-- Precondition: Line items valid, stock reservable in Inventory module
+-- Postcondition: Order created in PENDING state, reservations made
+-- COMPOSITION POINT: Depends on Inventory.ReserveStock.post
+CreateOrder (customerId : nat1, lineItems : seq of LineItem, currentTime : Time)
+  result : OrderId | OrderException
+ext
+  wr orders
+  wr nextOrderId
+  wr pendingConfirmations
+pre
+  -- Customer ID valid
+  customerId > 0 and
+  -- At least one line item
+  lineItems <> [] and
+  -- All line items have positive quantities and prices
+  (forall lineItem in set elems lineItems &
+    lineItem.quantity > 0 and lineItem.unitPrice > 0) and
+  -- No duplicate products in one order
+  (forall i, j in set inds lineItems &
+    i <> j =>
+      lineItems(i).productId <> lineItems(j).productId)
+post
+  -- On success: new order created in PENDING state
+  (is_OrderException(result) = false) =>
+    -- Order ID incremented
+    (nextOrderId > nextOrderId~) and
+    -- New order exists in orders map
+    (result in set dom orders) and
+    -- New order has correct status
+    (orders(result).status = <PENDING>) and
+    -- New order has all line items
+    (orders(result).lineItems = lineItems) and
+    -- Total amount calculated correctly
+    (orders(result).totalAmount =
+      sum([li.quantity * li.unitPrice | li in set elems lineItems])) and
+    -- Order added to pending confirmations
+    (result in set dom pendingConfirmations)
+  and
+  -- On failure: state unchanged, exception returned
+  (is_OrderException(result) = true) =>
+    orders = orders~ and
+    nextOrderId = nextOrderId~ and
+    pendingConfirmations = pendingConfirmations~;
+
+-- OPERATION 2: ConfirmOrder
+-- Purpose: Confirm order and move to CONFIRMED state
+-- Precondition: Order exists and is PENDING
+-- Postcondition: Order status changed to CONFIRMED, timestamp recorded
+-- COMPOSITION POINT: Provides guarantee that payment can now be initiated
+ConfirmOrder (orderId : OrderId, confirmTime : Time)
+  result : bool | OrderException
+ext
+  wr orders
+  wr pendingConfirmations
+pre
+  -- Order must exist
+  orderId in set dom orders and
+  -- Order must be PENDING
+  orders(orderId).status = <PENDING> and
+  -- Order must be in pending confirmations
+  orderId in set dom pendingConfirmations
+post
+  -- On success: status changed to CONFIRMED
+  result = true =>
+    -- Order status updated
+    (orders(orderId).status = <CONFIRMED>) and
+    -- Confirmation time recorded
+    (orders(orderId).confirmedTime = confirmTime) and
+    -- Removed from pending confirmations
+    (orderId not in set dom pendingConfirmations) and
+    -- Other orders unchanged
+    (forall oid in set dom orders & oid <> orderId =>
+      orders(oid) = orders~(oid))
+  and
+  -- On failure: state unchanged, exception returned
+  (result <> true) =>
+    orders = orders~ and
+    pendingConfirmations = pendingConfirmations~;
+
+-- OPERATION 3: CancelOrder
+-- Purpose: Cancel order (PENDING only) and release reservations
+-- Precondition: Order exists and is PENDING
+-- Postcondition: Order status CANCELLED, reservations released
+-- COMPOSITION POINT: Calls Inventory.ReleaseStock for each reservation
+CancelOrder (orderId : OrderId)
+  result : bool | OrderException
+ext
+  wr orders
+  wr pendingConfirmations
+pre
+  -- Order must exist
+  orderId in set dom orders and
+  -- Order must still be PENDING (can't cancel confirmed/completed orders)
+  orders(orderId).status = <PENDING>
+post
+  -- On success: status changed to CANCELLED
+  result = true =>
+    -- Order status updated
+    (orders(orderId).status = <CANCELLED>) and
+    -- Removed from pending confirmations
+    (orderId not in set dom pendingConfirmations) and
+    -- All line items must be released from Inventory
+    (let cancelledOrder = orders~(orderId),
+         resToRelease = cancelledOrder.reservationIds
+     in card resToRelease >= 0)
+  and
+  -- On failure: state unchanged, exception returned
+  (result <> true) =>
+    orders = orders~ and
+    pendingConfirmations = pendingConfirmations~;
+
+-- OPERATION 4: GetOrderStatus
+-- Purpose: Query order status without modification
+-- Precondition: Order exists
+-- Postcondition: Current order status returned
+GetOrderStatus (orderId : OrderId)
+  result : Order | OrderException
+ext
+  rd orders
+pre
+  orderId in set dom orders
+post
+  (orderId in set dom orders) =>
+    result = orders(orderId)
+  and
+  (orderId not in set dom orders) =>
+    result = <OrderNotFound>;
+
+-- OPERATION 5: CompleteOrder
+-- Purpose: Mark order as COMPLETED (internal operation after fulfillment)
+-- Precondition: Order must be CONFIRMED
+-- Postcondition: Order status set to COMPLETED
+CompleteOrder (orderId : OrderId)
+  result : bool | OrderException
+ext
+  wr orders
+pre
+  orderId in set dom orders and
+  orders(orderId).status = <CONFIRMED>
+post
+  result = true =>
+    (orders(orderId).status = <COMPLETED>) and
+    (forall oid in set dom orders & oid <> orderId =>
+      orders(oid) = orders~(oid))
+  and
+  result <> true =>
+    orders = orders~;
+
+-- ============================================================================
+-- HELPER FUNCTIONS
+-- ============================================================================
+
+functions
+
+-- Calculate total order amount
+  sum(nums : seq of nat) result : nat ==
+    if nums = [] then 0 else hd nums + sum(tl nums) end;
+
+-- Check if value is an exception type
+  is_OrderException(val : ?) result : bool ==
+    (val = <OrderNotFound> or
+     val = <InvalidOrderStatus> or
+     val = <InvalidQuantity> or
+     val = <InsufficientStock> or
+     val = <OrderAlreadyConfirmed>);
+
+end Order

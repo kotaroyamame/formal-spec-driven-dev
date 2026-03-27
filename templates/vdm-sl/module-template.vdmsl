@@ -1,0 +1,308 @@
+-- ============================================================================
+-- MODULE TEMPLATE: OrderManagement
+-- ============================================================================
+-- This is a practical VDM-SL module template demonstrating formal specification
+-- patterns for AI-driven development. Adapt this template by replacing
+-- "OrderManagement" with your module name and filling in domain-specific types,
+-- operations, and invariants.
+--
+-- PURPOSE: This template guides AI agents in writing formally verifiable specs
+-- that enable modular, composable system design with explicit pre/post conditions.
+--
+-- KEY SECTIONS:
+--   1. IMPORTS & DEPENDENCIES (for multi-module systems)
+--   2. TYPE DEFINITIONS (domain model with invariants)
+--   3. STATE DEFINITION (mutable system state + invariants)
+--   4. OPERATIONS (behavior with explicit contracts)
+--   5. HELPER FUNCTIONS (utility predicates and calculations)
+--
+-- ============================================================================
+
+module OrderManagement
+
+-- ============================================================================
+-- SECTION 1: IMPORTS & DEPENDENCIES
+-- ============================================================================
+-- Uncomment and add imports when composing with other modules.
+-- Format: imports [ModuleName] renaming all by [~old~new]
+--
+-- imports PaymentService renaming all by ~PaymentService~PS~
+-- imports Inventory renaming all by ~Inventory~Inv~
+
+-- ============================================================================
+-- SECTION 2: TYPE DEFINITIONS
+-- ============================================================================
+-- Define the domain model: types, records, and value constraints.
+-- Each type represents a concept in your domain.
+-- Use invariant functions (is_ValidX) to encode complex constraints
+-- that the type system alone cannot express.
+
+types
+
+  -- Unique identifier for orders
+  OrderId = nat
+    inv id == id > 0;
+
+  -- Product identifiers and quantities
+  ProductId = nat
+    inv id == id > 0;
+
+  Quantity = nat
+    inv q == q > 0;
+
+  -- Price in cents (avoid floating-point errors)
+  Price = nat;
+
+  -- Order status represents the lifecycle of an order
+  OrderStatus = <PENDING> | <CONFIRMED> | <SHIPPED> | <DELIVERED> | <CANCELLED>;
+
+  -- A line item in an order: what product, how much
+  LineItem :: product_id : ProductId
+             quantity     : Quantity
+             unit_price   : Price
+             inv mk_LineItem(p, q, u) == u > 0;  -- Unit price must be positive
+
+  -- Complete order record: essential information for business logic
+  Order :: order_id   : OrderId
+           customer_id : nat  -- TODO: Replace with CustomerId type
+           items       : seq of LineItem
+           status      : OrderStatus
+           created_at  : nat  -- Timestamp (epoch seconds)
+           updated_at  : nat  -- Timestamp (epoch seconds)
+           inv mk_Order(oid, cid, items, s, c, u) ==
+             (c <= u)              -- Created before updated
+             and len items > 0     -- Orders must have at least one item
+             and oid > 0 and cid > 0;
+
+  -- Calculate total order value (sum of line items)
+  OrderTotal = nat;
+
+  -- Result type for operations: either success or failure with reason
+  OperationResult = <SUCCESS> | <INVENTORY_INSUFFICIENT> | <INVALID_PRODUCT> | <ORDER_NOT_FOUND>;
+
+-- ============================================================================
+-- SECTION 3: STATE DEFINITION
+-- ============================================================================
+-- The state holds mutable data: orders, inventory, etc.
+-- STATE INVARIANT: conditions that must hold before and after every operation.
+-- This ensures the system never enters a logically inconsistent state.
+
+state OrderState of
+  orders : map OrderId to Order  -- All orders indexed by order_id
+  next_order_id : OrderId        -- Counter for generating new order IDs
+
+  -- INVARIANT: Consistency conditions for the entire state
+  inv state ==
+    -- next_order_id must be unique (no existing order has this ID)
+    (forall oid in set dom orders & oid < next_order_id)
+    -- All order IDs in the map must be positive
+    and (forall oid in set dom orders & oid > 0)
+    -- Each order's order_id field must match its map key
+    and (forall oid in set dom orders & orders(oid).order_id = oid)
+    -- No order can have an empty items list (enforced by Order invariant)
+    and (forall oid in set dom orders & len orders(oid).items > 0)
+    -- Status must be consistent with timestamps
+    and (forall oid in set dom orders & orders(oid).created_at <= orders(oid).updated_at)
+
+  -- INITIALIZATION: Set up the initial state
+  init s == s = mk_OrderState({}, 1)
+
+end
+
+-- ============================================================================
+-- SECTION 4: OPERATIONS
+-- ============================================================================
+-- Operations define behavior: what the system does and what clients can rely on.
+--
+-- PRE-CONDITION (pre_X): What must be true BEFORE the operation runs.
+--   - Client responsibility: they must ensure this holds.
+--   - If violated, behavior is undefined.
+--
+-- POST-CONDITION (post_X): What will be true AFTER the operation completes.
+--   - System responsibility: we guarantee this will hold.
+--   - Used by AI agents to verify correctness and compose operations.
+
+operations
+
+  -- ===== CREATE ORDER =====
+  -- Creates a new order in PENDING status.
+  -- PRE:  items list is non-empty and all products exist
+  -- POST: new order exists with unique ID, all invariants hold
+
+  CreateOrder(customer_id : nat, items : seq of LineItem)
+    oid : OrderId
+  pre
+    -- Customer ID must be valid (positive)
+    customer_id > 0
+    -- Must have at least one line item
+    and len items > 0
+    -- Each item must have valid product and quantity
+    and (forall i in set inds items &
+           items(i).product_id > 0
+           and items(i).quantity > 0
+           and items(i).unit_price > 0)
+    -- All product IDs in items must exist in inventory
+    -- TODO: Add pre-condition checking inventory availability
+    -- and (forall item in seq items & item.product_id in set inv_available_products())
+  post
+    -- New order is created with fresh order ID
+    let new_oid = RESULT
+    in
+      -- Order ID is unique (greater than max existing)
+      new_oid not in set dom orders~
+      -- Order ID is positive
+      and new_oid > 0
+      -- New order record is in state with correct data
+      and new_oid in set dom orders
+      and orders(new_oid).order_id = new_oid
+      and orders(new_oid).customer_id = customer_id
+      and orders(new_oid).items = items
+      and orders(new_oid).status = <PENDING>
+      and orders(new_oid).created_at = orders(new_oid).updated_at
+      -- next_order_id is incremented
+      and next_order_id = next_order_id~ + 1
+      -- State invariant is maintained
+      and inv_OrderState(OrderState);
+
+  -- ===== CONFIRM ORDER =====
+  -- Transitions order from PENDING to CONFIRMED.
+  -- PRE:  order exists and is in PENDING status
+  -- POST: order status is updated, cannot be undone in this operation
+
+  ConfirmOrder(order_id : OrderId)
+    result : OperationResult
+  pre
+    -- Order must exist
+    order_id in set dom orders
+    -- Order must be in PENDING status
+    and orders(order_id).status = <PENDING>
+  post
+    -- Result indicates success
+    RESULT = <SUCCESS>
+    -- Order status is updated to CONFIRMED
+    and orders(order_id).status = <CONFIRMED>
+    -- Updated timestamp is now current (greater than before)
+    and orders(order_id).updated_at > orders~(order_id).updated_at
+    -- All other order fields unchanged
+    and orders(order_id).order_id = orders~(order_id).order_id
+    and orders(order_id).customer_id = orders~(order_id).customer_id
+    and orders(order_id).items = orders~(order_id).items
+    and orders(order_id).created_at = orders~(order_id).created_at
+    -- State invariant is maintained
+    and inv_OrderState(OrderState);
+
+  -- ===== CALCULATE ORDER TOTAL =====
+  -- Pure function: computes total cost without modifying state.
+  -- PRE:  order exists and has valid line items
+  -- POST: returns sum of all line items (quantity * unit_price)
+
+  GetOrderTotal(order_id : OrderId)
+    total : OrderTotal
+  pre
+    -- Order must exist
+    order_id in set dom orders
+  post
+    -- Total is the sum of each line item
+    RESULT = CalculateTotal(orders(order_id).items);
+
+  -- ===== QUERY OPERATION =====
+  -- Retrieve an order without side effects.
+  -- PRE:  order exists
+  -- POST: returns the order record unchanged
+
+  GetOrder(order_id : OrderId)
+    order : Order
+  pre
+    order_id in set dom orders
+  post
+    RESULT = orders(order_id);
+
+  -- ===== UPDATE OPERATION WITH CONDITIONAL LOGIC =====
+  -- Cancels an order if it hasn't shipped yet.
+  -- PRE:  order exists and is not yet shipped
+  -- POST: order status is CANCELLED, or error returned if precondition violated
+
+  CancelOrder(order_id : OrderId)
+    result : OperationResult
+  pre
+    order_id in set dom orders
+  post
+    -- Case 1: Order can be cancelled (not shipped)
+    if orders~(order_id).status <> <SHIPPED> and orders~(order_id).status <> <DELIVERED>
+    then
+      RESULT = <SUCCESS>
+      and orders(order_id).status = <CANCELLED>
+      and orders(order_id).updated_at > orders~(order_id).updated_at
+    -- Case 2: Order cannot be cancelled (already shipped)
+    else
+      RESULT = <CANCELLED_TOO_LATE>
+      and orders = orders~
+    end
+    -- In all cases, state invariant holds
+    and inv_OrderState(OrderState);
+
+-- ============================================================================
+-- SECTION 5: HELPER FUNCTIONS
+-- ============================================================================
+-- Pure functions that compute values or check properties.
+-- Used by operations and by AI agents to reason about the system.
+-- Functions have no side effects: they don't modify state.
+
+functions
+
+  -- Calculate total cost of a list of line items
+  CalculateTotal(items : seq of LineItem) : OrderTotal ==
+    let total = 0 in
+      total;  -- TODO: Implement sum: sum([item.quantity * item.unit_price | item in seq items])
+
+  -- Check if an order is in a final state (cannot be modified)
+  IsOrderFinal(order : Order) : bool ==
+    order.status = <DELIVERED> or order.status = <CANCELLED>;
+
+  -- Count how many orders are in a given status
+  CountOrdersByStatus(status : OrderStatus) : nat ==
+    card {oid | oid in set dom orders & orders(oid).status = status};
+
+  -- Find all orders for a customer
+  GetCustomerOrders(customer_id : nat) : set of OrderId ==
+    {oid | oid in set dom orders & orders(oid).customer_id = customer_id};
+
+  -- Predicate: is a status transition valid?
+  IsValidStatusTransition(from : OrderStatus, to : OrderStatus) : bool ==
+    cases mk_(from, to) :
+      mk_(<PENDING>, <CONFIRMED>)  -> true,
+      mk_(<CONFIRMED>, <SHIPPED>)  -> true,
+      mk_(<SHIPPED>, <DELIVERED>)  -> true,
+      mk_(<PENDING>, <CANCELLED>)  -> true,
+      mk_(<CONFIRMED>, <CANCELLED>) -> true,
+      others                        -> false
+    end;
+
+-- ============================================================================
+-- SECTION 6: DOCUMENTATION FOR AI AGENTS
+-- ============================================================================
+--
+-- USING THIS TEMPLATE:
+--
+-- 1. Replace "OrderManagement" with your module name
+-- 2. Add domain-specific types in SECTION 2
+-- 3. Define mutable state in SECTION 3 with clear invariants
+-- 4. Implement operations in SECTION 4 with explicit pre/post conditions
+-- 5. Add helper functions in SECTION 5 as needed
+--
+-- FOR AI AGENTS - VERIFICATION CHECKLIST:
+-- ✓ Every operation has explicit PRE and POST conditions
+-- ✓ Every POST condition references both current state (operations(...))
+--   and previous state (operations~(...)) using tilde notation
+-- ✓ State invariant inv_OrderState is checked in every operation's POST
+-- ✓ Operations are composable: one operation's POST can imply another's PRE
+-- ✓ Pure functions (no side effects) clearly separated from operations
+-- ✓ All type invariants are enforced at definition and operation time
+--
+-- FOR COMPOSITION:
+-- - This module's POST conditions become other modules' PRE conditions
+-- - Use interface-contract.vdmsl to define what other agents can rely on
+-- - Check that inv_OrderState holds before calling any operation
+--
+
+end OrderManagement

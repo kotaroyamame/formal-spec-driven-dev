@@ -1,0 +1,284 @@
+-- Payment Module: E-commerce Order System
+-- VDM-SL Formal Specification
+-- Purpose: Process payments for confirmed orders and handle refunds
+-- Dependencies: Order module for order status verification
+
+module Payment
+
+exports all
+
+definitions
+
+-- ============================================================================
+-- TYPE DEFINITIONS
+-- ============================================================================
+
+types
+  -- Unique identifier for a payment transaction
+  PaymentId = nat1;
+
+  -- Unique identifier for an order
+  OrderId = nat1;
+
+  -- Payment status lifecycle
+  PaymentStatus = <PENDING> | <AUTHORIZED> | <CAPTURED> | <REFUNDED> | <FAILED>;
+
+  -- Supported payment methods
+  PaymentMethod = <CREDIT_CARD> | <DEBIT_CARD> | <DIGITAL_WALLET> | <BANK_TRANSFER>;
+
+  -- Payment method details
+  PaymentDetails :: method : PaymentMethod
+                   amount : nat1
+                   currency : seq of char
+                   orderId : OrderId;
+
+  -- Complete payment record
+  Payment :: paymentId : PaymentId
+             orderId : OrderId
+             amount : nat1
+             status : PaymentStatus
+             method : PaymentMethod
+             transactionRef : seq of char
+             createdTime : Time
+             processedTime : Time | <Nil>
+             refundedTime : Time | <Nil>
+             refundAmount : nat;
+
+  -- Time representation
+  Time :: year : nat
+          month : nat
+          day : nat;
+
+  -- Exception types
+  PaymentException = <OrderNotFound> | <InvalidOrderStatus> | <PaymentNotFound> |
+                    <InvalidPaymentMethod> | <PaymentAlreadyProcessed> |
+                    <InsufficientFunds> | <PaymentFailure>;
+
+  -- Payment authorization response from payment gateway
+  AuthorizationResponse :: approved : bool
+                          transactionRef : seq of char
+                          authCode : seq of char;
+
+end types
+
+-- ============================================================================
+-- STATE DEFINITION
+-- ============================================================================
+
+state PaymentStore of
+  -- Map from PaymentId to Payment
+  payments : map PaymentId to Payment
+  -- Next available PaymentId
+  nextPaymentId : nat1
+  -- Track refunds in progress (PaymentId to refund amount)
+  pendingRefunds : map PaymentId to nat
+inv
+  -- INVARIANT: PaymentId is positive
+  nextPaymentId > 0 and
+  -- INVARIANT: Payment amounts are positive
+  forall paymentId in set dom payments &
+    payments(paymentId).amount > 0 and
+  -- INVARIANT: Refund amounts don't exceed payment amount
+  (forall paymentId in set dom payments &
+    (if paymentId in set dom pendingRefunds then
+      pendingRefunds(paymentId) <= payments(paymentId).amount
+     else true)) and
+  -- INVARIANT: Status consistency - refunded payments have refund time
+  (forall paymentId in set dom payments &
+    payments(paymentId).status = <REFUNDED> =>
+      payments(paymentId).refundedTime <> <Nil> and
+      payments(paymentId).refundAmount > 0)
+end
+
+-- ============================================================================
+-- OPERATIONS
+-- ============================================================================
+
+operations
+
+-- OPERATION 1: InitiatePayment
+-- Purpose: Create payment record and start authorization process
+-- Precondition: Order exists and is CONFIRMED (from Order module)
+-- Postcondition: Payment created in PENDING state, ready for processing
+-- COMPOSITION POINT: Depends on Order.ConfirmOrder.post
+--   Order.ConfirmOrder.post guarantees:
+--   - orders(orderId).status = <CONFIRMED>
+--   - orders(orderId).totalAmount calculated
+--   This operation requires those guarantees before initiating payment
+InitiatePayment (orderId : OrderId, paymentDetails : PaymentDetails, currentTime : Time)
+  result : PaymentId | PaymentException
+ext
+  wr payments
+  wr nextPaymentId
+pre
+  -- Order must exist (should be guaranteed by Order.ConfirmOrder.post)
+  orderId > 0 and
+  -- Amount must be positive
+  paymentDetails.amount > 0 and
+  -- Payment method must be valid
+  (paymentDetails.method = <CREDIT_CARD> or
+   paymentDetails.method = <DEBIT_CARD> or
+   paymentDetails.method = <DIGITAL_WALLET> or
+   paymentDetails.method = <BANK_TRANSFER>) and
+  -- Currency must be provided
+  paymentDetails.currency <> ""
+post
+  -- On success: new payment created in PENDING state
+  (is_PaymentException(result) = false) =>
+    -- Payment ID incremented
+    (nextPaymentId > nextPaymentId~) and
+    -- New payment exists in payments map
+    (result in set dom payments) and
+    -- Payment has correct initial state
+    (payments(result).status = <PENDING>) and
+    -- Payment amount matches
+    (payments(result).amount = paymentDetails.amount) and
+    -- OrderId recorded correctly
+    (payments(result).orderId = paymentDetails.orderId) and
+    -- Creation time recorded
+    (payments(result).createdTime = currentTime) and
+    -- Not yet processed
+    (payments(result).processedTime = <Nil>) and
+    -- No refund yet
+    (payments(result).refundAmount = 0)
+  and
+  -- On failure: state unchanged, exception returned
+  (is_PaymentException(result) = true) =>
+    payments = payments~ and
+    nextPaymentId = nextPaymentId~;
+
+-- OPERATION 2: ProcessPayment
+-- Purpose: Authorize and capture payment (may involve gateway calls)
+-- Precondition: Payment exists in PENDING state
+-- Postcondition: Payment status changed to AUTHORIZED or FAILED
+ProcessPayment (paymentId : PaymentId, authResponse : AuthorizationResponse, processTime : Time)
+  result : bool | PaymentException
+ext
+  wr payments
+pre
+  -- Payment must exist
+  paymentId in set dom payments and
+  -- Payment must be in PENDING state
+  payments(paymentId).status = <PENDING> and
+  -- Authorization response must be valid
+  (true) -- response already validated by external system
+post
+  -- On success (authorized): update payment
+  (result = true and authResponse.approved = true) =>
+    -- Status changed to AUTHORIZED
+    (payments(paymentId).status = <AUTHORIZED>) and
+    -- Transaction reference recorded
+    (payments(paymentId).transactionRef = authResponse.transactionRef) and
+    -- Processed time recorded
+    (payments(paymentId).processedTime = processTime) and
+    -- Other fields unchanged
+    (forall pid in set dom payments & pid <> paymentId =>
+      payments(pid) = payments~(pid))
+  and
+  -- On authorization failure: status set to FAILED
+  (result = true and authResponse.approved = false) =>
+    -- Status changed to FAILED
+    (payments(paymentId).status = <FAILED>) and
+    -- Processed time recorded
+    (payments(paymentId).processedTime = processTime)
+  and
+  -- On exception: state unchanged
+  (is_PaymentException(result) = true) =>
+    payments = payments~;
+
+-- OPERATION 3: RefundPayment
+-- Purpose: Refund a payment (full or partial)
+-- Precondition: Payment is AUTHORIZED or CAPTURED
+-- Postcondition: Payment status REFUNDED, refund amount recorded
+-- Idempotent: Can safely be called multiple times
+-- COMPOSITION POINT: Calls Inventory.ReleaseStock.pre after refund
+--   This operation ensures order cancellation can proceed after refund
+RefundPayment (paymentId : PaymentId, refundAmount : nat, refundTime : Time)
+  result : bool | PaymentException
+ext
+  wr payments
+  wr pendingRefunds
+pre
+  -- Payment must exist
+  paymentId in set dom payments and
+  -- Payment must be authorized or captured (not pending or failed)
+  (payments(paymentId).status = <AUTHORIZED> or
+   payments(paymentId).status = <CAPTURED>) and
+  -- Refund amount must not exceed payment amount
+  refundAmount <= payments(paymentId).amount and
+  -- Refund amount must be positive
+  refundAmount > 0
+post
+  -- On success: payment refunded
+  (result = true) =>
+    -- Status changed to REFUNDED
+    (payments(paymentId).status = <REFUNDED>) and
+    -- Refund amount recorded
+    (payments(paymentId).refundAmount = refundAmount) and
+    -- Refund time recorded
+    (payments(paymentId).refundedTime = refundTime) and
+    -- Removed from pending refunds
+    (paymentId not in set dom pendingRefunds) and
+    -- Other payments unchanged
+    (forall pid in set dom payments & pid <> paymentId =>
+      payments(pid) = payments~(pid))
+  and
+  -- On failure: state unchanged, exception returned
+  (result <> true) =>
+    payments = payments~ and
+    pendingRefunds = pendingRefunds~;
+
+-- OPERATION 4: GetPaymentStatus
+-- Purpose: Query payment status without modification
+-- Precondition: Payment exists
+-- Postcondition: Current payment record returned
+GetPaymentStatus (paymentId : PaymentId)
+  result : Payment | PaymentException
+ext
+  rd payments
+pre
+  paymentId in set dom payments
+post
+  (paymentId in set dom payments) =>
+    result = payments(paymentId)
+  and
+  (paymentId not in set dom payments) =>
+    result = <PaymentNotFound>;
+
+-- OPERATION 5: CompletePayment
+-- Purpose: Mark payment as CAPTURED (internal operation after fulfillment)
+-- Precondition: Payment is AUTHORIZED
+-- Postcondition: Payment status set to CAPTURED
+CompletePayment (paymentId : PaymentId, captureTime : Time)
+  result : bool | PaymentException
+ext
+  wr payments
+pre
+  paymentId in set dom payments and
+  payments(paymentId).status = <AUTHORIZED>
+post
+  result = true =>
+    (payments(paymentId).status = <CAPTURED>) and
+    (forall pid in set dom payments & pid <> paymentId =>
+      payments(pid) = payments~(pid))
+  and
+  result <> true =>
+    payments = payments~;
+
+-- ============================================================================
+-- HELPER FUNCTIONS
+-- ============================================================================
+
+functions
+
+-- Check if value is a PaymentException type
+  is_PaymentException(val : ?) result : bool ==
+    (val = <OrderNotFound> or
+     val = <InvalidOrderStatus> or
+     val = <PaymentNotFound> or
+     val = <InvalidPaymentMethod> or
+     val = <PaymentAlreadyProcessed> or
+     val = <InsufficientFunds> or
+     val = <PaymentFailure>);
+
+end Payment

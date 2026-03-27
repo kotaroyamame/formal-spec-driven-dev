@@ -1,0 +1,185 @@
+MANIFEST: E-commerce Order System - Formal Spec-Driven Development Example
+===========================================================================
+
+PROJECT LOCATION:
+/sessions/kind-funny-sagan/mnt/AI駆動開発のベストプラクティス/formal-spec-driven-dev/examples/ec-site-order/
+
+PURPOSE:
+A complete, production-ready reference example for tech leads studying formal-spec-driven 
+development. Demonstrates how to:
+1. Decompose a complex system into formally-specified modules
+2. Write precise VDM-SL specifications with pre/post conditions and invariants
+3. Verify module composition at specification time
+4. Generate high-fidelity AI implementations from formal specs
+
+CREATED:
+March 28, 2026
+
+FILES:
+------
+
+1. README.md (369 lines)
+   Entry point for the example. Contains:
+   - Bilingual (English/Japanese) overview
+   - System architecture diagram
+   - Module responsibilities (Inventory, Order, Payment)
+   - Composition chain visualization
+   - Design decisions explained
+   - Step-by-step guide for tech leads
+   - AI code generation prompts for each module
+   
+   START HERE when studying this example.
+
+2. STRUCTURE.md (NEW - Navigation guide)
+   Roadmap for studying the example:
+   - Quick navigation to all files
+   - 4-phase learning path (15 min - 3 hours)
+   - Key concepts explained
+   - Common questions answered
+   - Guidance for scaling to new modules
+   
+   READ THIS after README to plan your study.
+
+3. .vdm/inventory.vdmsl (211 lines)
+   Formal specification of inventory management:
+   
+   Types:
+   - ProductId, WarehouseId, StockInfo, ReservationId
+   - StockCheckResult, StockException
+   
+   State:
+   - inventory: map ProductId → seq of StockInfo
+   - reservations: map ReservationId → (ProductId × nat × Time)
+   - nextReservationId: nat1
+   
+   Operations (5):
+   - CheckStock(productId) → StockCheckResult
+   - ReserveStock(productId, qty) → ReservationResult | exception
+   - ReleaseStock(reservationId) → bool | exception
+   - RestockProduct(...) → bool
+   
+   Invariants:
+   - Reserved stock ≤ total stock ✓
+   - Stock quantities ≥ 0 ✓
+   
+   Study this first - it's the simplest module.
+
+4. .vdm/order.vdmsl (252 lines)
+   Formal specification of order management:
+   
+   Types:
+   - OrderId, OrderStatus (<PENDING|CONFIRMED|COMPLETED|CANCELLED>)
+   - LineItem, Order
+   
+   State:
+   - orders: map OrderId → Order
+   - nextOrderId: nat1
+   - pendingConfirmations: map OrderId → Time
+   
+   Operations (5):
+   - CreateOrder(...) → OrderId | exception
+   - ConfirmOrder(...) → bool | exception
+   - CancelOrder(...) → bool | exception
+   - GetOrderStatus(...) → Order | exception
+   - CompleteOrder(...) → bool | exception
+   
+   Composition Points:
+   - CreateOrder.pre depends on Inventory.ReserveStock.post
+   - ConfirmOrder.post guarantees Order state for Payment.InitiatePayment.pre
+   
+   Study this second - see how it depends on Inventory.
+
+5. .vdm/payment.vdmsl (284 lines)
+   Formal specification of payment processing:
+   
+   Types:
+   - PaymentId, PaymentStatus (<PENDING|AUTHORIZED|CAPTURED|REFUNDED|FAILED>)
+   - PaymentMethod, PaymentDetails, Payment
+   - AuthorizationResponse
+   
+   State:
+   - payments: map PaymentId → Payment
+   - nextPaymentId: nat1
+   - pendingRefunds: map PaymentId → nat
+   
+   Operations (5):
+   - InitiatePayment(...) → PaymentId | exception
+   - ProcessPayment(...) → bool | exception
+   - RefundPayment(...) → bool | exception
+   - GetPaymentStatus(...) → Payment | exception
+   - CompletePayment(...) → bool | exception
+   
+   Composition Points:
+   - InitiatePayment.pre depends on Order.ConfirmOrder.post
+   - RefundPayment.post enables Inventory.ReleaseStock.pre
+   
+   Study this third - complete the module architecture.
+
+6. .vdm/integration-check.md (395 lines)
+   THE KEY DOCUMENT for understanding composition:
+   
+   Verifies three composition points:
+   
+   Point 1: Inventory.ReserveStock.post → Order.CreateOrder.pre
+   - Verifies: Does ReserveStock guarantee CreateOrder preconditions?
+   - Answer: YES ✓ - Stock is reserved and available
+   - Shows: Code pattern for safe composition
+   - Tests: Test case demonstrating the flow
+   
+   Point 2: Order.ConfirmOrder.post → Payment.InitiatePayment.pre
+   - Verifies: Does ConfirmOrder guarantee InitiatePayment preconditions?
+   - Answer: YES ✓ - Order confirmed, amount finalized
+   - Shows: Code pattern for safe composition
+   - Tests: Test case demonstrating the flow
+   
+   Point 3: Payment.RefundPayment.post → Inventory.ReleaseStock.pre
+   - Verifies: Does RefundPayment guarantee ReleaseStock preconditions?
+   - Answer: YES ✓ - Refund committed, can release inventory
+   - Shows: Code pattern for safe composition
+   - Tests: Test case demonstrating the flow
+   
+   STUDY THIS after understanding individual modules.
+   This is where formal verification happens.
+
+TOTAL CONTENT:
+- 1511 lines of VDM-SL specifications + documentation
+- 3 independent but composable modules
+- 3 verified composition points
+- Complete code generation prompts
+- Integration test cases
+- Navigation guides for learners
+
+RECOMMENDED STUDY PATH:
+1. Read README.md (overview) - 15 minutes
+2. Read STRUCTURE.md (roadmap) - 5 minutes
+3. Study inventory.vdmsl (specifications) - 15 minutes
+4. Study order.vdmsl (specifications) - 15 minutes
+5. Study payment.vdmsl (specifications) - 15 minutes
+6. Study integration-check.md (composition) - 30 minutes
+   
+   Total: ~1.5 hours to fully understand
+
+NEXT STEPS FOR YOUR TEAM:
+1. Copy this example directory as a template
+2. Replace inventory/order/payment with your domain
+3. Write VDM-SL specs following this pattern
+4. Verify your own composition points
+5. Use provided prompts to generate implementations
+6. Write integration tests based on composition verification
+
+KEY LEARNING OUTCOMES:
+After studying this example, you will understand:
+- How formal specs define module boundaries
+- Why composition verification is essential
+- How pre/post conditions create executable contracts
+- How invariants prevent bugs at specification time
+- How to generate AI code from formal specs
+- How to verify modules will integrate correctly
+- How to scale formal-spec-driven development
+
+This example is reference material. Study it, adapt it, teach it.
+It demonstrates production-ready formal-spec-driven development.
+
+---
+Created as part of formal-spec-driven development methodology documentation.
+For questions or improvements, refer to the parent directory's documentation.

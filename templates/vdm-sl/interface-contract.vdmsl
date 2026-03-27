@@ -1,0 +1,361 @@
+-- ============================================================================
+-- INTERFACE CONTRACT TEMPLATE: OrderManagement Interface
+-- ============================================================================
+-- This file defines the PUBLIC CONTRACT between the OrderManagement module
+-- and other modules/agents that depend on it.
+--
+-- PURPOSE: Enable multi-agent development by making explicit:
+--   1. What types other modules can use
+--   2. What operations are safe to call
+--   3. What guarantees callers can rely on
+--   4. What preconditions callers must satisfy
+--
+-- This is the "published API" of the module—other agents see ONLY this contract,
+-- not the internal implementation details.
+--
+-- COMPOSITION PATTERN:
+--   Module A's POST ⇒ Module B's PRE  (enables safe sequencing)
+--   Module A exports verified postconditions that become Module B's assumptions.
+--
+-- ============================================================================
+
+interface OrderManagementInterface
+
+-- ============================================================================
+-- SECTION 1: EXPORTED TYPES
+-- ============================================================================
+-- Only types defined here are visible to other modules.
+-- This controls the public API surface.
+
+types
+
+  -- Unique identifier for orders (clients must use this type)
+  OrderId = nat
+    inv id == id > 0;
+
+  -- Product identifier
+  ProductId = nat
+    inv id == id > 0;
+
+  -- Quantity of a product
+  Quantity = nat
+    inv q == q > 0;
+
+  -- Price in cents
+  Price = nat;
+
+  -- Public order status visible to all modules
+  OrderStatus = <PENDING> | <CONFIRMED> | <SHIPPED> | <DELIVERED> | <CANCELLED>;
+
+  -- Line item: product, quantity, price
+  LineItem :: product_id : ProductId
+             quantity     : Quantity
+             unit_price   : Price
+             inv mk_LineItem(p, q, u) == u > 0;
+
+  -- Complete order visible to clients
+  -- Note: Internal fields like timestamps may be hidden in real implementation
+  Order :: order_id   : OrderId
+           customer_id : nat
+           items       : seq of LineItem
+           status      : OrderStatus
+           created_at  : nat
+           updated_at  : nat;
+
+  -- Result types for all operations
+  OperationResult = <SUCCESS>
+                  | <INVENTORY_INSUFFICIENT>
+                  | <INVALID_PRODUCT>
+                  | <ORDER_NOT_FOUND>
+                  | <CANCELLED_TOO_LATE>
+                  | <INVALID_STATUS_TRANSITION>;
+
+-- ============================================================================
+-- SECTION 2: EXPORTED OPERATIONS (CONTRACTS ONLY)
+-- ============================================================================
+-- Each operation defines PRE and POST conditions that clients can rely on.
+--
+-- COMPOSITIONAL VERIFICATION:
+--   If OperationA.post => OperationB.pre, then A followed by B is safe.
+--
+-- CLIENT RESPONSIBILITY:
+--   1. Verify preconditions before calling
+--   2. Handle all possible result types
+--   3. Update local state based on postcondition guarantees
+
+operations
+
+  -- ===== CREATE ORDER =====
+  -- Creates a new order with a fresh, unique ID.
+  --
+  -- PRECONDITION (Client must ensure):
+  --   - customer_id is valid
+  --   - items list is non-empty
+  --   - All product IDs in items must be available in inventory
+  --
+  -- POSTCONDITION (System guarantees):
+  --   - Returns a fresh OrderId not used before
+  --   - Order exists in system with PENDING status
+  --   - Can be retrieved with GetOrder(oid)
+  --
+  -- COMPOSITION: Order.CreateOrder.post ⇒ Order.GetOrder.pre
+  --   After creating an order, you can immediately retrieve it.
+
+  CreateOrder(customer_id : nat, items : seq of LineItem)
+    oid : OrderId
+  pre
+    customer_id > 0
+    and len items > 0
+    and (forall i in set inds items & items(i).product_id > 0 and items(i).quantity > 0)
+  post
+    -- Fresh ID assigned
+    (RESULT > 0)
+    -- Order can be retrieved
+    and (let retrieved = GetOrder(RESULT)
+         in
+           retrieved.order_id = RESULT
+           and retrieved.customer_id = customer_id
+           and retrieved.status = <PENDING>
+           and retrieved.items = items);
+
+  -- ===== CONFIRM ORDER =====
+  -- Transitions an order from PENDING to CONFIRMED status.
+  --
+  -- PRECONDITION (Client must ensure):
+  --   - Order exists (OrderId must be valid)
+  --   - Order is currently in PENDING status
+  --   - Order has passed validation (e.g., inventory check)
+  --
+  -- POSTCONDITION (System guarantees):
+  --   - Returns <SUCCESS>
+  --   - Order status is now <CONFIRMED>
+  --   - All other order fields unchanged
+  --   - Cannot be undone by a single operation
+  --
+  -- COMPOSITION: Order.ConfirmOrder.post ⇒ Shipping.ShipOrder.pre
+  --   Only confirmed orders can be shipped by the Shipping module.
+
+  ConfirmOrder(order_id : OrderId)
+    result : OperationResult
+  pre
+    order_id > 0
+    and (let order = GetOrder(order_id)
+         in order.status = <PENDING>)
+  post
+    (RESULT = <SUCCESS>)
+    and (let confirmed = GetOrder(order_id)
+         in confirmed.status = <CONFIRMED>);
+
+  -- ===== GET ORDER =====
+  -- Pure read operation: retrieve order details.
+  --
+  -- PRECONDITION (Client must ensure):
+  --   - OrderId is valid (was returned by CreateOrder or known valid)
+  --
+  -- POSTCONDITION (System guarantees):
+  --   - Returns the current Order record
+  --   - No side effects (can be called multiple times)
+  --   - Returned order satisfies Order invariants
+  --
+  -- COMPOSITION: No constraints—GetOrder can be called anytime.
+
+  GetOrder(order_id : OrderId)
+    order : Order
+  pre
+    order_id > 0
+  post
+    (RESULT.order_id = order_id)
+    and (RESULT.items <> []);
+
+  -- ===== GET ORDER TOTAL =====
+  -- Pure function: calculate total cost without side effects.
+  --
+  -- PRECONDITION (Client must ensure):
+  --   - OrderId is valid
+  --
+  -- POSTCONDITION (System guarantees):
+  --   - Returns sum of (quantity * unit_price) for all items
+  --   - No state modification
+  --
+  -- COMPOSITION: Safe to call before/after any operation.
+
+  GetOrderTotal(order_id : OrderId)
+    total : nat
+  pre
+    order_id > 0
+  post
+    -- Total is strictly positive for non-empty item list
+    (RESULT > 0);
+
+  -- ===== CANCEL ORDER =====
+  -- Cancels an order if not yet shipped.
+  --
+  -- PRECONDITION (Client must ensure):
+  --   - OrderId is valid
+  --   - Order is not in <SHIPPED> or <DELIVERED> status
+  --
+  -- POSTCONDITION (System guarantees):
+  --   - If order is cancellable: returns <SUCCESS>, status = <CANCELLED>
+  --   - If order is not cancellable: returns <CANCELLED_TOO_LATE>, no change
+  --   - All other fields unchanged
+  --
+  -- COMPOSITION: CancelOrder.post ⇒ (Refund.IssueRefund.pre OR Inventory.RestockItems.pre)
+  --   After cancellation, refunds and restocking are needed.
+
+  CancelOrder(order_id : OrderId)
+    result : OperationResult
+  pre
+    order_id > 0
+  post
+    -- On success: status transitions to CANCELLED
+    ((RESULT = <SUCCESS>) =>
+      (let cancelled = GetOrder(order_id)
+       in cancelled.status = <CANCELLED>))
+    -- On failure: order unchanged
+    and ((RESULT = <CANCELLED_TOO_LATE>) =>
+      (let unchanged = GetOrder(order_id)
+       in unchanged.status <> <CANCELLED>));
+
+-- ============================================================================
+-- SECTION 3: COMPOSITION & DEPENDENCY CONTRACTS
+-- ============================================================================
+--
+-- SAFE OPERATION SEQUENCES (verified by composition):
+--
+-- Sequence 1: Create → Confirm → Ship
+--   CreateOrder(cust, items).post
+--     ⇒ ConfirmOrder(oid).pre  ✓ (PENDING order exists)
+--   ConfirmOrder(oid).post
+--     ⇒ Shipping.ShipOrder(oid).pre  ✓ (CONFIRMED order exists)
+--
+-- Sequence 2: Create → Confirm → Cancel (only in CONFIRMED)
+--   CreateOrder(cust, items).post
+--     ⇒ ConfirmOrder(oid).pre  ✓
+--   ConfirmOrder(oid).post
+--     ⇒ CancelOrder(oid).pre   ✓ (CONFIRMED order, can cancel)
+--
+-- Sequence 3: Query orders after modifications
+--   Any operation.post
+--     ⇒ GetOrder(oid).pre  ✓ (Safe to read after any mutation)
+--
+-- UNSAFE SEQUENCES (must be rejected by AI agent):
+--
+-- Sequence 1: Double-confirm (INVALID)
+--   ConfirmOrder(oid).post => status = CONFIRMED
+--   ConfirmOrder(oid).pre => requires status = PENDING ✗
+--   (AI agent detects: post result contradicts precondition)
+--
+-- Sequence 2: Ship before confirm (INVALID)
+--   CreateOrder().post => status = PENDING
+--   Shipping.ShipOrder.pre => requires status = CONFIRMED ✗
+--   (AI agent detects: postcondition doesn't imply precondition)
+
+-- ============================================================================
+-- SECTION 4: DEPENDENCY EXPECTATIONS
+-- ============================================================================
+--
+-- This module expects other modules to exist and provide:
+--
+-- 1. INVENTORY MODULE (for stock checks in CreateOrder)
+--    Required operations:
+--      - CheckAvailability(product_id : ProductId, quantity : Quantity) : bool
+--      - ReserveItems(product_id : ProductId, quantity : Quantity) : bool
+--      - ReleaseItems(product_id : ProductId, quantity : Quantity) : bool
+--    Expected PRE/POST: After CreateOrder, inventory for those products
+--                       must be decremented.
+--
+-- 2. PAYMENT MODULE (for processing payments on confirmation)
+--    Required operations:
+--      - AuthorizePayment(order_id : OrderId, amount : nat) : bool
+--      - CapturePayment(order_id : OrderId) : bool
+--    Expected PRE/POST: After ConfirmOrder.post, payment is authorized.
+--
+-- 3. SHIPPING MODULE (for shipment operations)
+--    Required operations:
+--      - ShipOrder(order_id : OrderId) : ShipmentId
+--      - TrackShipment(shipment_id : ShipmentId) : ShipmentStatus
+--    Expected PRE: ShipOrder requires order.status = CONFIRMED
+--    Expected POST: Transitions order status to SHIPPED
+--
+-- 4. CUSTOMER MODULE (for customer validation)
+--    Required operations:
+--      - ValidateCustomer(customer_id : nat) : bool
+--    Expected PRE/POST: CreateOrder.pre includes customer validation.
+--
+-- AI AGENT RESPONSIBILITY:
+--   Before calling any operation, verify that dependent modules are:
+--   1. Available (can be accessed)
+--   2. Satisfy their contracts (their postconditions hold)
+--   3. Will not violate this module's invariants
+
+-- ============================================================================
+-- SECTION 5: STATE INVARIANT CONTRACT
+-- ============================================================================
+--
+-- STATE INVARIANT (must hold before/after EVERY operation):
+--
+--   1. All OrderIds in system are unique and positive
+--   2. All orders have at least one LineItem
+--   3. created_at <= updated_at for every order
+--   4. OrderStatus values are valid (one of the defined enum values)
+--   5. No negative prices or quantities
+--   6. If status = CANCELLED, order is not in SHIPPED or DELIVERED state
+--   7. If status = CONFIRMED, order was previously PENDING
+--   8. If status = SHIPPED, order was previously CONFIRMED
+--
+-- INVARIANT VERIFICATION (for AI agents):
+--   After each operation, verify:
+--     inv_OrderManagement(state) = true
+--   If any operation violates this, the implementation is incorrect.
+
+-- ============================================================================
+-- SECTION 6: USAGE EXAMPLES FOR AI AGENTS
+-- ============================================================================
+--
+-- EXAMPLE 1: Create and confirm an order (safe sequence)
+--
+--   let oid = OrderManagement.CreateOrder(customer_id=123, items=[...])
+--   -- Now: oid > 0 ✓
+--   -- And: GetOrder(oid).status = PENDING ✓
+--
+--   let confirm_result = OrderManagement.ConfirmOrder(oid)
+--   -- Precondition verified: GetOrder(oid).status = PENDING ✓
+--   -- Now: confirm_result = SUCCESS ✓
+--   -- And: GetOrder(oid).status = CONFIRMED ✓
+--
+-- EXAMPLE 2: Cancel a pending order (safe)
+--
+--   let cancel_result = OrderManagement.CancelOrder(oid)
+--   -- Precondition: oid exists ✓
+--   -- Postcondition: cancel_result = SUCCESS ✓
+--
+-- EXAMPLE 3: Composition with Shipping module (safe)
+--
+--   -- This is safe because:
+--   -- ConfirmOrder.post guarantees status = CONFIRMED
+--   -- ShipOrder.pre requires status = CONFIRMED
+--   -- Therefore: ConfirmOrder.post ⇒ ShipOrder.pre
+--
+--   let result = OrderManagement.ConfirmOrder(oid)
+--   if result = SUCCESS then
+--     let shipment = ShippingModule.ShipOrder(oid)  -- Safe to call!
+--     -- ShipOrder precondition is satisfied
+
+-- ============================================================================
+-- SECTION 7: VERIFICATION CHECKLIST FOR AI AGENTS
+-- ============================================================================
+--
+-- When implementing this interface, verify:
+--
+-- ✓ PRE/POST CONTRACT: Every operation has both PRE and POST
+-- ✓ PRE IMPLIES POST: If PRE holds, POST will hold after execution
+-- ✓ COMPOSITION: Post(A) ⇒ Pre(B) for safe sequences
+-- ✓ IDEMPOTENCE: Some operations (e.g., GetOrder) are idempotent
+-- ✓ ATOMICITY: Operations are atomic (all-or-nothing)
+-- ✓ STATE INVARIANT: Checked before and after every operation
+-- ✓ ERROR HANDLING: All OperationResult cases are handled
+-- ✓ INVARIANT PRESERVATION: No operation violates type/state invariants
+-- ✓ DEPENDENCY CONTRACTS: Calls to other modules satisfy their contracts
+--
+
+end OrderManagementInterface

@@ -1,0 +1,211 @@
+-- Inventory Module: E-commerce Order System
+-- VDM-SL Formal Specification
+-- Purpose: Manage product stock across warehouses, track reservations
+
+module Inventory
+
+exports all
+
+definitions
+
+-- ============================================================================
+-- TYPE DEFINITIONS
+-- ============================================================================
+
+-- Unique identifier for a product
+types
+  ProductId = nat1;
+
+-- Information about a single warehouse location
+  WarehouseId = nat1;
+
+-- Stock status for a product in a warehouse
+  StockInfo :: productId : ProductId
+              warehouseId : WarehouseId
+              totalStock : nat
+              reservedStock : nat
+              lastRestockDate : Time;
+
+-- Time representation for restock tracking
+  Time :: year : nat
+          month : nat
+          day : nat;
+
+-- Result of stock check operation
+  StockCheckResult :: available : nat
+                     reserved : nat
+                     total : nat;
+
+-- Exception types
+  StockException = <InsufficientStock> | <ProductNotFound> | <InvalidQuantity>;
+
+-- Unique identifier for a reservation
+  ReservationId = nat1;
+
+-- Result of stock reservation
+  ReservationResult :: reservationId : ReservationId
+                      reservedAmount : nat;
+
+end types
+
+-- ============================================================================
+-- STATE DEFINITION
+-- ============================================================================
+
+state InventoryStore of
+  -- Map from ProductId to list of StockInfo (multiple warehouses)
+  inventory : map ProductId to seq of StockInfo
+  -- Next available ReservationId
+  nextReservationId : nat1
+  -- Map from ReservationId to (ProductId, quantity, timestamp)
+  reservations : map ReservationId to (ProductId * nat * Time)
+inv
+  -- INVARIANT: Reserved stock never exceeds total stock
+  forall productId in set dom inventory &
+    (forall stockInfo in set elems inventory(productId) &
+      stockInfo.reservedStock <= stockInfo.totalStock) and
+  -- INVARIANT: Stock quantities are never negative
+  (forall productId in set dom inventory &
+    forall stockInfo in set elems inventory(productId) &
+      stockInfo.totalStock >= 0 and stockInfo.reservedStock >= 0)
+end
+
+-- ============================================================================
+-- OPERATIONS
+-- ============================================================================
+
+operations
+
+-- OPERATION 1: CheckStock
+-- Purpose: Query available stock for a product across all warehouses
+-- Input: ProductId
+-- Output: StockCheckResult with breakdown of available, reserved, total
+CheckStock (productId : ProductId)
+  result : StockCheckResult | <ProductNotFound>
+ext
+  rd inventory
+pre
+  productId in set dom inventory
+post
+  (productId in set dom inventory) =>
+    let stockList = inventory(productId),
+        totalStockSum = sum([si.totalStock | si in set elems stockList]),
+        reservedStockSum = sum([si.reservedStock | si in set elems stockList]),
+        availableStockSum = totalStockSum - reservedStockSum
+    in
+      (result = mk_StockCheckResult(availableStockSum, reservedStockSum, totalStockSum))
+  and
+  (productId not in set dom inventory) =>
+    result = <ProductNotFound>;
+
+-- OPERATION 2: ReserveStock
+-- Purpose: Reserve a quantity of stock for an incoming order
+-- Precondition: Enough available stock exists
+-- Postcondition: Stock is marked as reserved, reservation ID returned
+ReserveStock (productId : ProductId, quantityToReserve : nat)
+  result : ReservationResult | StockException
+ext
+  wr inventory
+  wr reservations
+  wr nextReservationId
+pre
+  -- Product must exist
+  productId in set dom inventory and
+  -- Quantity must be positive
+  quantityToReserve > 0 and
+  -- Enough available stock must exist
+  let stockList = inventory(productId),
+      totalStockSum = sum([si.totalStock | si in set elems stockList]),
+      reservedStockSum = sum([si.reservedStock | si in set elems stockList]),
+      availableStockSum = totalStockSum - reservedStockSum
+  in
+    availableStockSum >= quantityToReserve
+post
+  -- On success: reservation ID is assigned and incremented
+  (is_StockException(result) = false) =>
+    (nextReservationId > nextReservationId~) and
+    -- Reservation record created
+    (forall resId in set dom reservations &
+      resId in set dom reservations~ or resId = nextReservationId~ + 1) and
+    -- Updated inventory shows increased reserved stock
+    (forall si in set elems inventory(productId) &
+      si.reservedStock >= si.reservedStock~) and
+    -- Exactly quantityToReserve was reserved
+    (let totalReservedIncrease =
+       sum([si.reservedStock | si in set elems inventory(productId)]) -
+       sum([si.reservedStock | si in set elems inventory~(productId)])
+     in totalReservedIncrease = quantityToReserve)
+  and
+  -- On failure: state unchanged, exception returned
+  (is_StockException(result) = true) =>
+    inventory = inventory~ and
+    reservations = reservations~ and
+    nextReservationId = nextReservationId~;
+
+-- OPERATION 3: ReleaseStock
+-- Purpose: Release previously reserved stock (order cancelled)
+-- Precondition: ReservationId exists
+-- Postcondition: Reserved stock is decremented, reservation removed
+ReleaseStock (reservationId : ReservationId)
+  result : bool | StockException
+ext
+  wr inventory
+  wr reservations
+pre
+  -- Reservation must exist
+  reservationId in set dom reservations
+post
+  -- On success: reservation deleted and stock updated
+  (result = true) =>
+    (reservationId not in set dom reservations) and
+    -- Stock counts match the released amount
+    (let releasedQty = let (pid, qty, time) = reservations~(reservationId) in qty
+     in sum([si.reservedStock | si in set elems inventory(pid)]) =
+        sum([si.reservedStock | si in set elems inventory~(pid)]) - releasedQty)
+  and
+  -- On failure: state unchanged, exception returned
+  (result <> true) =>
+    inventory = inventory~ and
+    reservations = reservations~;
+
+-- OPERATION 4: RestockProduct
+-- Purpose: Add stock to a warehouse (receive shipment)
+-- Precondition: Product and warehouse exist
+-- Postcondition: Total stock increased, reserved stock unchanged
+RestockProduct (productId : ProductId, warehouseId : WarehouseId,
+                quantityAdded : nat, restockTime : Time)
+  result : bool
+ext
+  wr inventory
+pre
+  productId in set dom inventory and
+  quantityAdded > 0 and
+  -- Warehouse must exist for this product
+  exists si in set elems inventory(productId) & si.warehouseId = warehouseId
+post
+  -- On success: total stock increased
+  result = true =>
+    (let stockList = inventory(productId),
+         oldStockSum = sum([si.totalStock | si in set elems inventory~(productId)]),
+         newStockSum = sum([si.totalStock | si in set elems inventory(productId)])
+     in newStockSum = oldStockSum + quantityAdded) and
+    -- Reserved stock unchanged
+    (sum([si.reservedStock | si in set elems inventory(productId)]) =
+     sum([si.reservedStock | si in set elems inventory~(productId)])) and
+    -- Target warehouse's totalStock increased
+    (exists si in set elems inventory(productId) &
+      si.warehouseId = warehouseId and
+      si.totalStock =
+        (let oldSi = iota si2 in set elems inventory~(productId) &
+           si2.warehouseId = warehouseId
+         in oldSi.totalStock) + quantityAdded);
+
+-- Helper function: sum a sequence of numbers
+functions
+  sum(nums : seq of nat) result : nat ==
+    if nums = [] then 0 else hd nums + sum(tl nums) end;
+
+  iota(setExpr : set of ?T) result : ?T ==
+    the s in set setExpr & true;
+
+end Inventory
