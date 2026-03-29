@@ -195,6 +195,7 @@ formal-spec-driven-dev/
 
 - **論文（日本語）:** [docs/ja/paper.md](docs/ja/paper.md)
 - **論文（英語）:** [docs/en/paper.md](docs/en/paper.md)
+- **Claude Code実践ガイド:** [docs/claude-code-integration.md](docs/claude-code-integration.md) — CLAUDE.mdの階層構造を活用した具体的な開発方法
 - **マルチエージェント・アーキテクチャガイド（日本語）:** [docs/ja/architecture-guide.md](docs/ja/architecture-guide.md)
 - **マルチエージェント・アーキテクチャガイド（英語）:** [docs/en/architecture-guide.md](docs/en/architecture-guide.md)
 - **VDM-SLテンプレート使用方法:** [templates/vdm-sl/README.md](templates/vdm-sl/README.md)
@@ -386,6 +387,7 @@ See [`LICENSE`](LICENSE) for details.
 
 - **Paper (Japanese):** [docs/ja/paper.md](docs/ja/paper.md)
 - **Paper (English):** [docs/en/paper.md](docs/en/paper.md)
+- **Claude Code Integration Guide:** [docs/claude-code-integration.md](docs/claude-code-integration.md) — Practical guide using CLAUDE.md hierarchy for formal-spec-driven development
 - **Multi-Agent Architecture Guide (Japanese):** [docs/ja/architecture-guide.md](docs/ja/architecture-guide.md)
 - **Multi-Agent Architecture Guide (English):** [docs/en/architecture-guide.md](docs/en/architecture-guide.md)
 - **VDM-SL Templates Usage:** [templates/vdm-sl/README.md](templates/vdm-sl/README.md)
