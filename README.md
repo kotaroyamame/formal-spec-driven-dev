@@ -202,7 +202,7 @@ formal-spec-driven-dev/
 
 ### 著者
 
-**Hikaru Ando** (ando@iid.systems)
+**Hikaru Ando (安藤光太郎)** (ando@iid.systems)
 IID Systems
 
 ---
@@ -394,7 +394,7 @@ See [`LICENSE`](LICENSE) for details.
 
 ### Author
 
-**Hikaru Ando** (ando@iid.systems)
+**Hikaru Ando (安藤光太郎)** (ando@iid.systems)
 IID Systems
 
 ---

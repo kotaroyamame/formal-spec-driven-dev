@@ -1,5 +1,7 @@
 # AI Agent-Driven Development with Formal Methods — The Human Role in the Era of Multi-Agent Coordination
 
+**Hikaru Ando (安藤光太郎)** — IID Systems
+
 *— Toward a Near Future Where AI Agent Teams Autonomously Build Systems Using Formal Specifications as Contracts —*
 
 ## Introduction: Entering the Era of AI Agent-Driven Development
