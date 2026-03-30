@@ -8,9 +8,9 @@ The rapid evolution of large language models (LLMs) is fundamentally challenging
 
 This raises a fundamental question: when multiple AI agents coordinate, what serves as the "team's common language"? Vague natural-language specifications cannot eliminate interpretive discrepancies between agents. Applying Test-Driven Development (TDD) doesn't help either—tests are grounded in inductive reasoning and cannot function as a mechanism for inter-agent specification agreement.
 
-What this article proposes is a multi-agent development paradigm in which formal methods—specifically VDM (Vienna Development Method)—serve as the backbone of specification, with formal specifications functioning as **rigorous contracts between agents**. Think of it like construction: the human serves as domain expert and architect, communicating the overall design intent, while multiple AI agents work in parallel like a construction crew—one handling the foundation, another the structural frame, another electrical, another plumbing. Each agent understands its boundaries through the formal specification—the "blueprint"—enabling unambiguous coordination.
+What this article proposes is a multi-agent development paradigm in which formal methods—specifically VDM (Vienna Development Method)—serve as the backbone of specification, with formal specifications functioning as **rigorous contracts between agents**. Think of it like building a house: the homeowner (human) says "I want a bright, open living room with lots of natural light." The builder (AI) considers the budget, climate, and site conditions, then proposes a design—perhaps a vaulted ceiling with floor-to-ceiling windows. The sequencing of foundation, framing, electrical, and plumbing is not the homeowner's concern; that's the builder's expertise. Each subcontractor (AI agent) understands its boundaries through the formal specification—the "blueprint"—enabling unambiguous coordination.
 
-This article first identifies the fundamental limitations of TDD (Chapter 1), then argues why formal methods are ideally suited as "contracts" between AI agents (Chapters 2–5), presents a concrete multi-agent coordination architecture (Section 7.3), and discusses **how the human role is redefined** in this new paradigm—as domain expert and architecture-level decision maker.
+This article first identifies the fundamental limitations of TDD (Chapter 1), then argues why formal methods are ideally suited as "contracts" between AI agents (Chapters 2–5), presents a concrete multi-agent coordination architecture (Section 7.3), and discusses **how the human role is redefined** in this new paradigm—as a domain expert who defines requirements, while technical design and implementation are delegated to AI.
 
 ---
 
@@ -228,9 +228,9 @@ These design challenges are resolved concretely in Phase 2 (AI-driven design) of
 
 ### 4.1 The Proposed Workflow
 
-**Phase 1: Client and Architect — Dialogue-Driven Formal Specification**
+**Phase 1: Homeowner and Builder — Dialogue-Driven Formal Specification**
 
-This phase mirrors the relationship between a building client and an architect. The client (human) does not read structural calculations. They converse with the architect (AI), confirming that their requirements are correctly captured.
+This phase mirrors the relationship between a homeowner and a builder. The homeowner says "I want a bright, open living room"—they don't concern themselves with structural calculations or material specifications. The builder (AI) considers constraints such as budget, site conditions, and climate to propose a concrete design. If the homeowner lives in a cold region and wants to minimize heating costs, the builder won't propose floor-to-ceiling glass; instead, they'll suggest alternatives that achieve openness within those constraints. Through this iterative dialogue of proposals, evaluation, and refinement, the specification is built up.
 
 The human communicates business requirements in natural language. AI generates VDM-SL. The human never reads the formal specification directly. AI explains the specification's content and implications in natural language; the human judges whether the explanation matches their intent.
 
@@ -473,7 +473,7 @@ This is the same principle by which API documentation and interface definitions 
 
 Several challenges remain at this point: unifying cross-cutting concerns (authentication/authorization, logging, error handling patterns), managing shared data model consistency (database schemas), and automating agent orchestration (execution order and dependency control). These are not problems of fundamental impossibility but engineering challenges—their resolution is a matter of time.
 
-For now, these cross-cutting design decisions can be finalized during Phase 1 by the architect AI and human, then included in each agent's instructions. The human's role is not only that of domain expert deciding "what to build," but also that of **architecture-level decision maker** in multi-agent development. In the building analogy, this is the client who not only decides the floor plan but also consults with the architect on "in what order to commission foundation, structure, electrical, and plumbing, and to which contractors."
+These cross-cutting design decisions are resolved autonomously by AI in Phase 2, then included in each agent's instructions. The human's role is strictly that of a **domain expert**—defining what to build, not how to build it. In the building analogy, the homeowner says "I want a bright living room that's warm in winter" and "my budget is X." The sequencing of foundation, framing, electrical, and plumbing—and which contractors to hire—is the builder's domain, not the homeowner's. Similarly, technology selection (language, framework, database) and architecture design are AI's autonomous responsibility.
 
 **Scaling Outlook**
 
@@ -483,11 +483,11 @@ The combination of multi-agent coordination and formal specifications makes medi
 
 ## Conclusion: The Human Role in AI Agent-Driven Development
 
-The multi-agent paradigm of formal methods + AI-driven development fundamentally redefines the human role in software development. The developer who was "a person who writes code" becomes a **domain expert and architecture-level decision maker**—"a person who decides what to build, designs the overall system structure, and evaluates the output of the AI agent team."
+The multi-agent paradigm of formal methods + AI-driven development fundamentally redefines the human role in software development. The developer who was "a person who writes code" becomes a **domain expert**—"a person who defines what to build and why, and evaluates whether the AI's proposals match their business intent."
 
-This is not a devaluation of human contribution—it is an **elevation in abstraction level**. It is the same evolution as the transition from assembly language to high-level languages, from manual memory management to garbage collection. Humans become free to concentrate on more fundamental questions: "What should be built?", "Why?", and "How should the system be decomposed, and which agents should own which responsibilities?"
+This is not a devaluation of human contribution—it is an **elevation in abstraction level**. It is the same evolution as the transition from assembly language to high-level languages, from manual memory management to garbage collection. Humans become free to concentrate on the most fundamental questions: "What should be built?" and "Why?"—while technology selection, system architecture, and implementation are delegated to AI.
 
-What is required is deep understanding of one's own business domain, structural thinking about system architecture, and the ability to engage in logical dialogue with AI. Reading or writing formal notation is not required—that is the AI agents' responsibility. The human's role is to exercise domain expertise when the architect AI explains in natural language: "Is this module decomposition appropriate for the requirements?" The quality of that judgment is the core competence of humans in the multi-agent development era.
+What is required is deep understanding of one's own business domain and the ability to engage in logical dialogue with AI. Reading or writing formal notation is not required—that is the AI agents' responsibility. The human's role is to exercise domain expertise when the architect AI explains in natural language: "Is this module decomposition appropriate for the requirements?" Whether the system ends up written in Python, Ruby, or TypeScript is not the human's concern—that decision is made autonomously by AI based on the formal specification and non-functional requirements. The quality of domain judgment is the core competence of humans in the multi-agent development era.
 
 Formal methods function as a discipline of each AI agent's reasoning, as rigorous contracts between agents, as a means of mechanical verification at module boundaries, and as an auditable record for the future. Humans need not read them—but writing formally carries decisive value, especially in contexts where multiple agents coordinate. This is the central claim of this article.
 
