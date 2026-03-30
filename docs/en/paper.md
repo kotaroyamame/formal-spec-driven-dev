@@ -328,13 +328,23 @@ A critical point deserves emphasis: the cycle of Phase 2 (design) → Phase 3 (i
 
 This is possible precisely because the specification is formally defined. If the specification were ambiguous, AI could not autonomously determine whether a defect is a specification problem or an implementation problem. But a formal specification provides an unambiguous criterion for correctness, enabling AI to automatically judge "this does not satisfy the specification → correction is needed." Once the human confirms the specification in Phase 1, AI can be entrusted with the entire process until a working system is delivered.
 
-**The Feedback Loop to Phase 1—Iterative Specification Evolution**
+**The Specification-Centric Short Cycle—A Third Structure, Neither Waterfall Nor Agile**
 
-An important supplement: Phases 1→2→3→4 are not a one-directional waterfall. In practice, when humans operate and interact with the completed system from Phase 4, **tacit knowledge that could not initially be articulated** surfaces. "I didn't realize I needed this feature until I actually used the system" is a universal experience in software development.
+Let us clarify the cycle structure of this methodology by contrasting it with conventional approaches.
 
-At this point, the team returns to Phase 1 for another round of specification dialogue. Critically, the second and subsequent iterations of Phase 1 are qualitatively different from the first. The human now has hands-on experience with the actual system, enabling more concrete articulation of requirements. The AI, too, has accumulated dialogue history from which it has learned the edge cases and implicit assumptions typical of this domain, allowing it to ask sharper questions. In the building analogy: you discover only after moving in that "I wish there were a shelf here" or "this traffic flow is awkward," and in the next renovation you can express far more specific requests.
+In waterfall, the flow is linear: requirements → specification → design → coding → release → requirements. In agile, the cycle is: requirements → lightweight design → coding → release → requirements—improvement driven by post-release feedback. In both cases, tacit knowledge surfaces **after release**—that is, only after humans use a working system.
 
-From the outside, this looks like an agile development team. But there is a fundamental difference. In agile, each iteration requires rewriting tests, worrying about side effects of refactoring, and manually modifying code. In this methodology, updating the specification causes AI to autonomously re-execute Phases 2–4, generating a new system that conforms to the updated specification. The cost per iteration is fundamentally different.
+This methodology's structure is fundamentally different. Because the formal specification is rigorous, **specification-level testing and mock generation become possible without waiting for release**. The cycle is as follows:
+
+> **Requirements articulation ↔ Formal specification ↔ Spec testing and mock presentation → Release**
+
+The human conveys requirements; AI generates a VDM-SL specification. AI verifies the specification's internal consistency and presents contradictions or undefined edge cases to the human. Furthermore, AI generates mocks (prototypes) automatically from the specification and has the human interact with them, eliciting "tacit knowledge that only surfaces through hands-on experience"—**before a single line of code is written**. Specification testing surfaces logical contradictions; mocks surface experiential insights. This dual feedback loop operates at the specification level.
+
+In the building analogy, this is like walking through the floor plan in a 3D model before construction—discovering "this traffic flow is awkward" or "I want a shelf here" through VR previewing. Far more efficient than renovating after moving in.
+
+Once this cycle has run sufficiently, Phases 2–4 are executed autonomously by AI, delivering a system that conforms to the specification. Of course, new requirements may emerge after release, but in that case the team simply returns to the same specification-centric cycle. There is no need to rewrite tests or worry about refactoring side effects as in agile—updating the specification causes AI to generate a new system.
+
+**The fact that the cycle is centered on the specification**—this is the structural hallmark of this methodology.
 
 ### 4.2 What Humans Need to Know
 
