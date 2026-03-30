@@ -342,7 +342,7 @@ The human conveys requirements; AI generates a VDM-SL specification. AI verifies
 
 In the building analogy, this is like walking through the floor plan in a 3D model before construction—discovering "this traffic flow is awkward" or "I want a shelf here" through VR previewing. Far more efficient than renovating after moving in.
 
-Once this cycle has run sufficiently, Phases 2–4 are executed autonomously by AI, delivering a system that conforms to the specification. Of course, new requirements may emerge after release, but in that case the team simply returns to the same specification-centric cycle. There is no need to rewrite tests or worry about refactoring side effects as in agile—updating the specification causes AI to generate a new system.
+Once this cycle has run sufficiently, Phases 2–4 are executed autonomously by AI, delivering a system that conforms to the specification. Of course, the possibility of new tacit knowledge surfacing after release does not drop to zero. However, having passed through both logical verification at the specification level and experiential verification through mocks, the volume of tacit knowledge that emerges post-release is **drastically reduced** compared to agile methods. And should something be discovered, the team simply returns to the same specification-centric cycle. There is no need to rewrite tests or worry about refactoring side effects as in agile—updating the specification causes AI to generate a new system.
 
 **The fact that the cycle is centered on the specification**—this is the structural hallmark of this methodology.
 
