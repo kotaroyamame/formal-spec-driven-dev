@@ -247,7 +247,7 @@ The human role doesn't disappear. It elevates. You become the domain expert and 
 
 ---
 
-*Hikaru Ando (安藤光太郎) — IID Systems*
+*Hikaru Ando — IID Systems*
 *[GitHub: formal-spec-driven-dev](https://github.com/kotaroyamame/formal-spec-driven-dev) | Apache 2.0*
 
 ---

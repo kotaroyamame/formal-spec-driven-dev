@@ -299,6 +299,10 @@ For the sorting specification above, suppose the human states: "Data scale is ap
 
 The key structural insight: the formal specification provides the **correctness criterion** while non-functional requirements provide the **design constraints**, and the two are independent. Bubble sort satisfies the VDM-SL specification but is O(n²)—unworkable for n = 10³⁰—and is rejected based on non-functional requirements. The separation of formal specification and non-functional requirements prevents correctness and efficiency from becoming entangled.
 
+**Eliciting Non-Functional Requirements Through Dialogue:** A practical challenge arises here. Domain experts may not be able to specify quantitative non-functional requirements such as "response time under 200ms" from the outset. Whether 200ms or 500ms is appropriate involves trade-offs between user experience and infrastructure cost—a domain distinct from pure business knowledge.
+
+This methodology addresses this through **experience-based elicitation** by AI. For example, AI generates a mock UI and intentionally reproduces different response delays (100ms, 300ms, 500ms, 1000ms) for the human to interact with. The human can then judge experientially: "this feels too slow" or "this is acceptable." Alternatively, AI presents rough infrastructure cost estimates: "achieving 200ms requires this configuration at $X/month; 500ms requires this configuration at $Y/month," enabling the domain expert to make a business decision. The quantification of non-functional requirements is thus resolved within the same dialogue structure as Phase 1—AI proposes, human decides.
+
 **Phase 3: AI Code Generation**
 
 AI generates code corresponding to the VDM-SL specification. The key points:
@@ -323,6 +327,14 @@ Because the specification is precisely defined, test generation enjoys enormous 
 A critical point deserves emphasis: the cycle of Phase 2 (design) → Phase 3 (implementation) → Phase 4 (verification) is **executed entirely by AI, autonomously**. If Phase 4 detects a specification violation, AI either fixes the implementation or revisits design decisions (algorithm selection, data structure choices) and re-implements. No human intervenes in this feedback loop.
 
 This is possible precisely because the specification is formally defined. If the specification were ambiguous, AI could not autonomously determine whether a defect is a specification problem or an implementation problem. But a formal specification provides an unambiguous criterion for correctness, enabling AI to automatically judge "this does not satisfy the specification → correction is needed." Once the human confirms the specification in Phase 1, AI can be entrusted with the entire process until a working system is delivered.
+
+**The Feedback Loop to Phase 1—Iterative Specification Evolution**
+
+An important supplement: Phases 1→2→3→4 are not a one-directional waterfall. In practice, when humans operate and interact with the completed system from Phase 4, **tacit knowledge that could not initially be articulated** surfaces. "I didn't realize I needed this feature until I actually used the system" is a universal experience in software development.
+
+At this point, the team returns to Phase 1 for another round of specification dialogue. Critically, the second and subsequent iterations of Phase 1 are qualitatively different from the first. The human now has hands-on experience with the actual system, enabling more concrete articulation of requirements. The AI, too, has accumulated dialogue history from which it has learned the edge cases and implicit assumptions typical of this domain, allowing it to ask sharper questions. In the building analogy: you discover only after moving in that "I wish there were a shelf here" or "this traffic flow is awkward," and in the next renovation you can express far more specific requests.
+
+From the outside, this looks like an agile development team. But there is a fundamental difference. In agile, each iteration requires rewriting tests, worrying about side effects of refactoring, and manually modifying code. In this methodology, updating the specification causes AI to autonomously re-execute Phases 2–4, generating a new system that conforms to the updated specification. The cost per iteration is fundamentally different.
 
 ### 4.2 What Humans Need to Know
 
@@ -399,6 +411,16 @@ Current LLMs are not AGI. They lack the ability to autonomously understand busin
 This profile—strong at specification understanding and implementation, limited at requirements definition—is ideal for combination with formal methods. Humans convey the business "What" in natural language; AI translates it into a formal specification, verifies it through dialogue with the human, and then implements the technical "How."
 
 When AGI arrives, AI may be able to handle even the "What." Until then, formal methods combined with AI-driven development is the most rational approach available.
+
+### 5.5 Interim Operational Measures—Bridging Ideal and Today
+
+This methodology's concept targets the optimization of AI-driven development **in the period from the near future—when AI agent autonomy has advanced further—through AGI arrival**. The ideal workflow (fully autonomous Phase 2–4 cycles) cannot be fully realized for complex systems with current LLMs. Acknowledging this honestly, we present **interim measures for gradually adopting this methodology starting today**.
+
+**Phase 2 (Design) Interim Measures:** Current LLMs can autonomously handle design for simple CRUD systems and API services. However, for complex distributed systems or systems with advanced security requirements, intervention by an experienced architect may still be needed. As an interim measure, AI generates design proposals and a human architect reviews and corrects them—a hybrid model. The key is to position this architect involvement as **transitional**, with the explicit expectation that it will be progressively reduced as AI autonomy improves.
+
+**Phase 4 (Verification) Interim Measures:** The cycle of automatically generating property-based tests from VDM-SL post-conditions and executing them can currently run fully autonomously only for simple specifications. For specifications involving complex state transitions or concurrent processing, QA engineer expertise may be needed for test strategy design. In this case too, the QA engineer does not write test cases by hand but instead reviews and adjusts the direction of AI-generated test strategies. Test execution and result evaluation remain AI-autonomous.
+
+**Common Principle Across Interim Measures:** In all interim measures, human intervention is limited to "reviewing AI output and correcting direction." Humans do not write code from scratch or handcraft test cases. This ensures a natural reduction of human intervention points as AI autonomy improves. The interim measures do not negate the methodology's ideal—they are a graduated migration path toward it.
 
 ---
 

@@ -180,7 +180,7 @@ If you're using Spec Kit today and thinking about how to scale it to multi-agent
 
 ---
 
-*Hikaru Ando (安藤光太郎) — [IID Systems](https://iid.systems)*
+*Hikaru Ando — [IID Systems](https://iid.systems)*
 *[GitHub: formal-spec-driven-dev](https://github.com/kotaroyamame/formal-spec-driven-dev) | Apache 2.0*
 
 ---
