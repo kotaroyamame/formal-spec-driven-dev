@@ -19,32 +19,39 @@ orchestration:
   description: "Multi-agent workflow where formal specs (VDM-SL) serve as contracts between modules"
 
   # Phases: each phase has specific agents and outputs
-  # Phase 1: Human + Architect → System specification + module decomposition
-  # Phase 2-4: Parallel module agents → Independent development with formal contracts
+  # Phase 1: Domain Expert + Architect Agent → VDM-SL specification + @ext annotations + module decomposition
+  # Phase 2-4: Fully AI-autonomous → Independent development with formal contracts
+  #
+  # Human Role: Domain expert ONLY (Phase 1). Humans define business rules and
+  # non-functional requirements; all technology decisions are made by AI agents.
   phases:
     phase1:
-      name: "System Architecture & Specification"
+      name: "Domain Specification"
       duration_estimate: "1-3 days"
-      stakeholders: ["tech_lead", "domain_expert"]
-      focus: "Define system boundary, business rules, and module decomposition"
+      stakeholders: ["domain_expert", "architect_agent"]
+      focus: "Define business rules (VDM-SL) and non-functional requirements (@ext annotations) through domain expert dialogue"
 
     phase2:
-      name: "Module Design"
+      name: "Technical Design (AI-Autonomous)"
       duration_estimate: "1-2 days per module"
       stakeholders: ["module_agent"]
-      focus: "Design module interfaces (pre/post conditions) based on arch spec"
+      focus: "AI selects technology stack, designs architecture, maps domain structure to implementation structure"
+      autonomous: true
+      note: "Technology selection (language, framework, DB, infrastructure) is 100% AI decision based on VDM-SL + @ext"
 
     phase3:
-      name: "Implementation"
+      name: "Implementation (AI-Autonomous)"
       duration_estimate: "2-5 days per module"
       stakeholders: ["module_agent", "integration_agent"]
       focus: "Generate code from specifications, self-test against spec"
+      autonomous: true
 
     phase4:
-      name: "Integration & Verification"
+      name: "Integration & Verification (AI-Autonomous)"
       duration_estimate: "1-2 days"
       stakeholders: ["integration_agent"]
       focus: "Verify composability (A.post ⇒ B.pre), cross-module contracts"
+      autonomous: true
 
 ---
 # AGENT DEFINITIONS
@@ -55,35 +62,41 @@ agents:
     id: "architect"
     role: "Formal Specification Architect"
     phase: 1
-    interaction_model: "Human-in-the-loop dialogue"
+    interaction_model: "Domain expert dialogue"
 
     description: |
-      Elicits requirements from domain experts/tech leads through structured dialogue.
-      Produces formal VDM-SL specifications that define:
-      - System types and invariants (business rules)
+      Elicits requirements from domain experts through structured dialogue.
+      Produces formal VDM-SL specifications with @ext annotations that define:
+      - System types and invariants (business rules) — VDM-SL
+      - Non-functional requirements (performance, usability, etc.) — @ext annotations
       - Module boundaries and responsibilities
       - Inter-module contracts (interfaces)
 
-      This agent acts as a bridge between business requirements and formal notation.
+      The human participant is a DOMAIN EXPERT, not a technology decision-maker.
+      This agent translates domain knowledge into formal notation.
+      Technology decisions (language, framework, DB) are NOT made in this phase.
 
     # What inputs does this agent need?
     context_requirements:
-      - business_requirements_doc: "Description of what the system should do"
-      - domain_constraints: "Non-functional requirements, regulations, performance needs"
-      - existing_architecture: "Existing systems, legacy integrations (if any)"
+      - domain_expert_knowledge: "Domain expert's understanding of business rules and requirements"
+      - non_functional_expectations: "Performance, usability, availability, compliance needs (captured as @ext)"
+      - existing_systems: "Existing systems, legacy integrations (if any)"
       - success_criteria: "How will we measure if this is correct?"
 
     # What outputs does this agent produce?
     outputs:
-      - system_spec_vdmsl: "Complete VDM-SL specification of the system"
-      - module_decomposition: "List of modules, boundaries, and responsibilities"
+      - system_spec_vdmsl: "Complete VDM-SL specification with @ext annotations"
+      - ext_annotations: "@ext annotations for non-functional requirements (performance, usability, availability, security, compliance, scalability, cost, observability, accessibility, i18n, data, integration, domain, ux)"
+      - module_decomposition: "List of modules, boundaries, and responsibilities (domain-level)"
       - interface_contracts: "Pre/post conditions for each module's public operations"
-      - assumptions_and_decisions: "Rationale for design choices"
+      - assumptions_and_decisions: "Rationale for domain-level design choices"
 
     # Constraints and safeguards
     constraints:
       - must_use_vdmsl: "Output must be syntactically valid VDM-SL (machine-checkable)"
-      - no_implementation_details: "Specs describe WHAT, not HOW (no algorithms)"
+      - must_use_ext_annotations: "All non-functional requirements must be captured as @ext annotations in VDM-SL comments"
+      - no_implementation_details: "Specs describe WHAT, not HOW (no algorithms, no technology choices)"
+      - no_technology_decisions: "Never mention specific languages, frameworks, or databases in Phase 1"
       - explicit_invariants: "All business rules must be captured in type invariants"
       - composability_focus: "Design interfaces so A.postcond ⇒ B.precond is verifiable"
 
@@ -91,70 +104,81 @@ agents:
     prompts:
       - system: "templates/prompts/phase1-specification.md"
         role: "Formal specification architect"
-        instructions: "Dialogue with stakeholder to build formal spec"
+        instructions: "Dialogue with domain expert to build formal spec + @ext annotations"
 
     # Success metrics
     acceptance_criteria:
       - vdmsl_parses: "Generated VDM-SL is syntactically valid"
+      - ext_coverage: "All non-functional requirements captured as @ext annotations with measurable criteria"
       - completeness: "All module interfaces fully specified"
-      - clarity: "Stakeholder confirms spec matches intent"
+      - clarity: "Domain expert confirms spec matches business intent"
       - no_ambiguity: "Pre/post conditions are precise, not vague"
+      - no_technology_leak: "No technology-specific decisions appear in Phase 1 output"
 
-    # Human handoff points (where tech lead reviews/approves)
+    # Human checkpoints in Phase 1 are INTENTIONAL — the domain expert
+    # must confirm that specs accurately reflect business rules.
     human_checkpoints:
-      - after_domain_types: "Review proposed types and invariants"
-      - after_module_boundaries: "Confirm module decomposition makes sense"
-      - after_interface_contracts: "Verify contracts between modules are correct"
-      - final_approval: "Sign off on complete specification"
+      - after_domain_types: "Domain expert reviews proposed types and invariants"
+      - after_module_boundaries: "Domain expert confirms module decomposition matches business domains"
+      - after_interface_contracts: "Domain expert verifies contracts between modules reflect real business flows"
+      - after_ext_annotations: "Domain expert confirms non-functional requirements are correctly quantified"
+      - final_approval: "Domain expert signs off on complete specification"
 
   # ==== MODULE AGENT TEMPLATE (Phase 2-4, one per module) ====
   module_agent_template:
     id: "module_{{ module_name }}"
-    role: "Module Implementation Agent"
+    role: "Module Design & Implementation Agent"
     phases: [2, 3, 4]
-    interaction_model: "Autonomous with periodic human review"
+    interaction_model: "Fully AI-autonomous"
 
     description: |
-      Develops a single module in isolation based on:
-      1. Its own module specification (from Phase 1)
+      Fully autonomous AI agent that develops a single module based on:
+      1. Its own module specification (VDM-SL + @ext annotations from Phase 1)
       2. Interface specifications of dependent modules
 
-      Works through Phase 2 (design), Phase 3 (implementation), Phase 4 (verification)
-      independently, but coordinates with other module agents via formal contracts.
+      Phase 2 (Design): AI autonomously selects technology stack (language, framework, DB),
+      designs architecture, and maps domain-level VDM-SL structure to optimal implementation
+      structure. VDM-SL operations and modules are domain-level abstractions — they do NOT
+      need to map 1:1 to code-level functions, classes, or services.
+
+      Phase 3 (Implementation): AI generates code, tests, and documentation.
+      Phase 4 (Verification): AI verifies spec compliance and contract composability.
 
       Key: This agent only needs its own spec + dependency interface specs.
       It does NOT need to know about other modules' internal implementation.
+      It does NOT need human input for technology decisions.
 
     # Template variables (fill these in when instantiating for a real module)
     module_specifics:
       module_name: "{{ e.g., order, inventory, payment }}"
       vdmsl_spec_file: "templates/.vdm/{{ module_name }}-module.vdmsl"
-      responsible_team: "{{ e.g., order team, payments team }}"
 
     # What inputs does this agent need?
     context_requirements:
-      - own_module_spec: "This module's complete VDM-SL specification"
+      - own_module_spec: "This module's complete VDM-SL specification with @ext annotations"
       - dependency_interface_specs: "Postconditions of modules this one depends on"
       - shared_data_model: "Shared types and invariants (from Phase 1)"
-      - platform_constraints: "Technology stack, frameworks, conventions"
-      - cross_cutting_concerns: "Error handling, logging, auth patterns"
+      # Note: No platform_constraints or team_expertise — technology selection is AI's job
 
     # What outputs does this agent produce?
     outputs:
-      - design_document: "Phase 2: Detailed design with operation decomposition"
-      - implementation_code: "Phase 3: Source code (Python, TypeScript, etc.)"
-      - unit_tests: "Phase 3: Tests derived from preconditions"
+      - technology_selection: "Phase 2: Language, framework, DB, infrastructure choices (driven by @ext)"
+      - domain_to_impl_mapping: "Phase 2: Mapping from VDM-SL domain structure to implementation structure"
+      - design_document: "Phase 2: Detailed design with architecture and operation decomposition"
+      - implementation_code: "Phase 3: Source code in AI-selected language/framework"
+      - unit_tests: "Phase 3: Tests derived from preconditions and postconditions"
       - verification_report: "Phase 4: Self-verification against spec"
 
     constraints:
       - spec_compliance: "Implementation must satisfy all pre/post conditions"
+      - ext_compliance: "@ext annotations must be addressed in design (performance targets, usability criteria, etc.)"
       - composability: "Operations must respect dependency interface contracts"
       - no_side_effects: "Only interact with dependencies via formal contracts"
-      - type_safety: "Must use strongly-typed implementation language"
+      - domain_impl_independence: "Domain structure (VDM-SL) need not match implementation structure"
 
     prompts:
       - system_phase2: "templates/prompts/phase2-design.md"
-        context_for_agent: "Own module spec + dependency interface specs"
+        context_for_agent: "Own module spec (VDM-SL + @ext) + dependency interface specs"
 
       - system_phase3: "templates/prompts/phase3-implementation.md"
         context_for_agent: "Design doc + own module spec"
@@ -164,47 +188,55 @@ agents:
 
     acceptance_criteria:
       - spec_verified: "Code satisfies preconditions and delivers postconditions"
+      - ext_satisfied: "@ext requirements addressed (performance targets, usability criteria, etc.)"
       - dependency_contracts_satisfied: "Dependencies' postconditions match this module's preconditions"
       - tests_pass: "All auto-generated tests pass"
-      - code_review: "Human reviewer approves implementation"
 
-    human_checkpoints:
-      - design_review: "After Phase 2: confirm design approach"
-      - code_review: "After Phase 3: code quality and spec compliance"
-      - integration_readiness: "Before Phase 4: ready to integrate?"
+    # TRANSITIONAL: Human checkpoints are NOT part of the intended design.
+    # The goal is fully AI-autonomous Phase 2-4. These checkpoints exist only
+    # because current AI capabilities may occasionally require human review.
+    # They should be removed as AI reliability improves.
+    human_checkpoints_transitional:
+      - design_review: "TRANSITIONAL: Human may review technology selection if AI confidence is low"
+      - code_review: "TRANSITIONAL: Human may review critical security or compliance code"
+      - integration_readiness: "TRANSITIONAL: Human may verify before production deployment"
 
   # ==== INTEGRATION AGENT (Phase 4) ====
   integration_agent:
     id: "integration"
     role: "Integration & Verification Agent"
     phase: 4
-    interaction_model: "Autonomous with human escalation"
+    interaction_model: "Fully AI-autonomous"
 
     description: |
-      After all modules are implemented, verifies that modules compose correctly.
+      Fully autonomous AI agent that verifies modules compose correctly.
 
       Primary responsibility: Verify that for every inter-module call,
       the caller's postcondition ⇒ callee's precondition.
+
+      Also verifies that @ext annotations are satisfied across module boundaries
+      (e.g., end-to-end latency budgets, cross-module availability targets).
 
       This is the "contract verification" step — if all modules satisfy their
       specs, and contracts verify, the system works.
 
     context_requirements:
       - all_module_implementations: "Code from all module agents"
-      - all_module_specs: "VDM-SL specifications"
+      - all_module_specs: "VDM-SL specifications with @ext annotations"
       - integration_test_spec: "Formal spec for end-to-end scenarios"
-      - deployment_plan: "How modules will be deployed and interact"
+      - deployment_plan: "How modules will be deployed and interact (AI-generated)"
 
     outputs:
       - composability_report: "Which module pairs have verified contracts"
+      - ext_compliance_report: "Cross-module @ext requirement verification (latency budgets, availability, etc.)"
       - integration_tests: "End-to-end tests based on system spec"
       - deployment_checklist: "Go-no-go decision"
       - issues_log: "Any contract violations, with remediation"
 
     constraints:
-      - no_implementation_changes: "Cannot modify module code without approval"
+      - no_implementation_changes: "Cannot modify module code; sends fix request to module agent"
       - focus_on_contracts: "Verify A.post ⇒ B.pre, not internal logic"
-      - traceability: "Every test traces back to formal spec"
+      - traceability: "Every test traces back to formal spec or @ext annotation"
 
     prompts:
       - system: "templates/prompts/phase4-verification.md"
@@ -212,8 +244,13 @@ agents:
 
     acceptance_criteria:
       - all_contracts_verified: "All inter-module calls satisfy contracts"
+      - ext_requirements_met: "All @ext annotations satisfied (performance, availability, etc.)"
       - integration_tests_pass: "System-level scenarios work end-to-end"
       - no_surprises: "Behavior matches formal spec"
+
+    # TRANSITIONAL: Human escalation exists only as a safety net for current AI limitations.
+    human_checkpoints_transitional:
+      - deployment_approval: "TRANSITIONAL: Human may review before production deployment"
 
 ---
 # DATA FLOW & HANDOFF POINTS
@@ -224,31 +261,39 @@ agents:
 data_flow:
 
   # Phase 1 → Phase 2 handoff
+  # This is the ONLY handoff that involves a human (domain expert).
+  # All subsequent handoffs are fully AI-to-AI.
   phase1_to_phase2:
-    from: "architect_agent"
+    from: "architect_agent (with domain expert)"
     to: "module_agent_template (for each module)"
     what_is_passed:
-      - system_spec_vdmsl: "Complete formal spec from Phase 1"
-      - module_spec_extract: "Extract of spec relevant to this module"
+      - system_spec_vdmsl: "Complete formal spec with @ext annotations from Phase 1"
+      - ext_annotations: "@ext annotations defining non-functional requirements (performance, usability, availability, security, compliance, etc.)"
+      - module_spec_extract: "Extract of spec relevant to this module (VDM-SL + @ext)"
       - interface_contracts: "Pre/post conditions for this module's operations"
       - dependency_interface_specs: "Interface specs of modules this depends on"
-      - phase2_prompt: "Design prompt with context"
+      - phase2_prompt: "Design prompt — module agent autonomously determines technology and architecture"
     verification:
-      - "Architect agent confirms spec is correct before handoff"
-      - "Each module agent confirms they understand their spec"
+      - "Domain expert confirms spec matches business intent (Phase 1 only)"
+      - "Architect agent confirms VDM-SL is syntactically valid"
+      - "Architect agent confirms all @ext annotations have measurable criteria"
+    note: "VDM-SL + @ext annotations are the COMPLETE input for Phase 2. No additional human input needed."
 
-  # Phase 2 → Phase 3 handoff (within same agent)
+  # Phase 2 → Phase 3 handoff (within same agent, fully autonomous)
   phase2_to_phase3:
     from: "module_agent"
     to: "module_agent (same agent, next phase)"
     what_is_passed:
-      - design_document: "Detailed design from Phase 2"
-      - spec: "Own module spec (unchanged)"
+      - design_document: "Detailed design from Phase 2 (including technology selection, domain→impl mapping)"
+      - technology_decisions: "Selected language, framework, DB, infrastructure (AI-determined from @ext)"
+      - domain_to_impl_mapping: "How VDM-SL operations map to implementation units"
+      - spec: "Own module spec with @ext annotations (unchanged)"
       - phase3_prompt: "Implementation prompt with design context"
     verification:
-      - "Human reviewer approves design"
+      - "Module agent self-verifies design satisfies @ext requirements"
+      # TRANSITIONAL: Human review may be inserted here until AI reliability improves
 
-  # Phase 3 → Phase 4 handoff
+  # Phase 3 → Phase 4 handoff (fully autonomous)
   phase3_to_phase4:
     from: "module_agent (all modules)"
     to: "integration_agent"
@@ -256,9 +301,10 @@ data_flow:
       - implementation_code: "Source code from all modules"
       - unit_tests: "Tests from each module"
       - spec_compliance_report: "Each module's self-verification"
-      - integration_spec: "System-level formal spec"
+      - ext_compliance_report: "Each module's @ext requirement satisfaction"
+      - integration_spec: "System-level formal spec with @ext annotations"
     verification:
-      - "Each module agent confirms code satisfies their spec"
+      - "Each module agent confirms code satisfies their spec and @ext requirements"
       - "Integration agent reviews all inputs before starting"
 
 ---
@@ -320,9 +366,10 @@ shared_data_model:
     - Money type (used by payment, billing, order modules)
 
   governance:
-    - "Changes to shared types require architect agent + human approval"
+    - "Changes to shared types require architect agent + domain expert approval (Phase 1 scope)"
     - "All module agents must be notified of changes"
     - "Module agents verify their contracts still hold after changes"
+    - "Technology-specific type mappings are Phase 2 concerns and do NOT require domain expert approval"
 
 ---
 # CROSS-CUTTING CONCERNS
@@ -367,40 +414,51 @@ cross_cutting_concerns:
 
 human_decision_points:
 
+  # Phase 1: Domain expert involvement is INTENTIONAL and PERMANENT.
+  # The human is the source of domain knowledge — this cannot be automated.
   after_phase1_complete:
-    question: "Is this specification complete and correct?"
-    who_decides: "Tech lead, domain expert, architect agent"
+    question: "Does this specification accurately capture the business rules?"
+    who_decides: "Domain expert, architect agent"
+    role: "intentional"
     escalation_triggers:
       - "Spec is ambiguous or incomplete"
-      - "Module decomposition seems wrong"
+      - "Module decomposition doesn't match business domains"
       - "Contracts are circular or impossible to satisfy"
-    fallback: "Return to architect agent for clarification"
+      - "@ext annotations lack measurable criteria"
+    fallback: "Return to architect agent for clarification with domain expert"
 
+  # Phase 2-4: Human checkpoints are TRANSITIONAL.
+  # These exist only because current AI capabilities may occasionally need oversight.
+  # The intended design is fully AI-autonomous Phase 2-4.
   after_phase2_per_module:
-    question: "Is this module's design approach sound?"
-    who_decides: "Tech lead, module agent"
+    question: "TRANSITIONAL: Does the AI's technology selection and design seem reasonable?"
+    who_decides: "Module agent (autonomous); human review optional"
+    role: "transitional"
+    note: "This checkpoint should be eliminated as AI reliability improves"
     escalation_triggers:
-      - "Design violates constraints"
-      - "Contract dependencies seem problematic"
-      - "Estimated complexity seems wrong"
-    fallback: "Redesign with architect agent input"
+      - "AI confidence in technology selection is below threshold"
+      - "@ext requirements appear contradictory or infeasible"
+    fallback: "Module agent re-evaluates; may request architect agent clarification on @ext"
 
   after_phase3_per_module:
-    question: "Does implementation satisfy spec?"
-    who_decides: "Tech lead, code reviewer"
+    question: "TRANSITIONAL: Does implementation satisfy spec?"
+    who_decides: "Module agent (autonomous); human review optional for critical modules"
+    role: "transitional"
+    note: "This checkpoint should be eliminated as AI reliability improves"
     escalation_triggers:
-      - "Code doesn't match design"
-      - "Spec compliance is questionable"
-      - "Tests reveal unexpected behavior"
-    fallback: "Module agent fixes issues and resubmits"
+      - "Spec compliance cannot be self-verified"
+      - "Security or compliance-critical code (@ext:security, @ext:compliance)"
+    fallback: "Module agent fixes issues and re-verifies"
 
   after_phase4_complete:
-    question: "Can we deploy?"
-    who_decides: "Tech lead, integration agent"
+    question: "TRANSITIONAL: Can we deploy?"
+    who_decides: "Integration agent (autonomous); human review optional"
+    role: "transitional"
+    note: "This checkpoint should be eliminated as AI reliability improves"
     escalation_triggers:
       - "Contract verification failed somewhere"
       - "Integration tests reveal systemic issues"
-      - "Performance doesn't meet requirements"
+      - "@ext:availability or @ext:security targets not met"
     fallback: "Identify which module needs rework; repeat Phase 3/4"
 
 ---
