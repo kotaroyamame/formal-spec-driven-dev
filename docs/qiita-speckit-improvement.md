@@ -184,7 +184,7 @@ Spec Kitを現在使用中で、マルチエージェント・マルチモジュ
 
 ---
 
-*安藤 光 — [IID Systems](https://iid.systems)*
+*安藤光太郎 — [IID Systems](https://iid.systems)*
 *[GitHub: formal-spec-driven-dev](https://github.com/kotaroyamame/formal-spec-driven-dev) | Apache 2.0*
 
 ---
