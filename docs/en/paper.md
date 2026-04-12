@@ -285,6 +285,96 @@ measure len s;
 
 Note what happened: three rounds of misunderstanding in natural language were resolved by two post-conditions in VDM-SL. `bagOf(l) = bagOf(RESULT)` means "the output is a permutation of the input (same elements, same counts)." The ordering condition means "no adjacent pair is out of order." This specification is satisfied by bubble sort, quicksort, and merge sort alike. **Algorithm selection is a design decision, not a specification concern.**
 
+**Phase 1 Supplement: Formalizing Existing Specifications — The MD→VDM-SL→MD Pipeline**
+
+The Phase 1 dialogue examples above assumed building specifications from scratch. In practice, however, development teams often already have incomplete specification documents — requirements documents, design docs, API specs — written in Markdown or similar formats. In such cases, it is more efficient to start from the existing document rather than from zero.
+
+The core insight of this approach is that **the very act of attempting to convert natural language to VDM-SL functions as a specification verification activity**. When you try to write VDM-SL type definitions, pre-conditions, or post-conditions, the "parts you cannot write" emerge structurally. The reason you cannot write them is that the original natural language specification is ambiguous.
+
+Here is the concrete process, illustrated with an e-commerce order processing specification.
+
+*Step 1: Document Structure Analysis and Requirement Classification*
+
+AI reads the Markdown document and automatically classifies its structural elements. Headings become module or agent boundary candidates. Bullet lists map to requirements, constraints, and rules. Tables become data models. Numbered lists correspond to sequential operations or workflows. Each requirement is classified by which VDM-SL construct it maps to: "A product has an ID, a name, and a stock count" maps to type definitions (`types`); "Stock cannot go below zero" maps to an invariant (`inv`); "Users can create orders" maps to an operation (`operations`).
+
+*Step 2: Systematic Ambiguity Detection Through VDM-SL Conversion Attempts*
+
+This is the critical step. Attempting to convert natural language to VDM-SL exposes seven patterns of ambiguity.
+
+First, vague quantifiers. If the specification says "a user can have multiple addresses," VDM-SL requires choosing between `seq of Address` (no limit), `seq1 of Address` (at least one required), or `inv addrs == len addrs <= N` (maximum N). The natural language word "multiple" leaves this distinction unresolved.
+
+Second, undefined terms. "Only active users can place orders" is written, but "active" is not defined. Defining a union type `<ACTIVE> | <SUSPENDED> | <DELETED>` in VDM-SL requires enumerating all possible states.
+
+Third, implicit constraints. If the document simply says "users can place orders," writing a VDM-SL pre-condition naturally raises questions: "Can a user place orders on behalf of other users?" "Is there a limit on concurrent orders?"
+
+Fourth, missing error cases. When writing post-conditions, it becomes apparent that "what happens when payment fails" or "what if the item is out of stock" are undefined. Post-conditions cannot be written from happy-path descriptions alone.
+
+Fifth, ambiguous relationships. If "a product is associated with a category" is stated, VDM-SL requires deciding between `map ProductId to CategoryId` (many-to-one) or `map ProductId to set of CategoryId` (many-to-many).
+
+Sixth, temporal ambiguity. "After payment, allocate inventory" — is "after" a strict ordering? Is concurrent execution permitted? Expressing this as a chain of pre/post-conditions requires the ordering to be explicit.
+
+Seventh, boundary conditions. If "stock has a maximum of 1000 units" is stated, whether the invariant is `<= 1000` or `< 1000` changes the meaning.
+
+*Step 3: Priority-Ordered Dialogue for Ambiguity Resolution*
+
+Detected ambiguities are classified into three priority levels and presented to the user. "Blocking" means no VDM-SL can be written without this answer (e.g., the state list of a state machine). "Important" means it affects pre-conditions, post-conditions, or invariants (e.g., inclusive vs. exclusive boundary). "Clarifying" means it would make the spec more precise but is not strictly necessary to proceed (e.g., an upper limit on a list).
+
+Related questions are grouped to minimize dialogue rounds. Complex documents may require 3–5 rounds of clarification. This dialogue process is a concrete manifestation of the principle discussed in Section 5.3: "formal notation functions as a discipline of thought."
+
+A critical principle: **AI never silently resolves ambiguity.** Every interpretation choice is presented to the user. The entire purpose of formalization is to make the implicit explicit, and this principle is non-negotiable.
+
+*Step 4: VDM-SL Generation with Traceability*
+
+VDM-SL specifications are generated from the resolved information. The key here is bidirectional traceability. Each VDM-SL element carries a `[REQ-nnn]` tag and the original natural language text as a comment.
+
+```vdm
+operations
+  -- [REQ-004] "Users can create orders"
+  CreateOrder(userId: UserId, items: seq1 of OrderItem) res: OrderId
+    ext wr orders : map OrderId to Order
+        rd users  : map UserId to User
+    pre userId in set dom users
+        and users(userId).status = <ACTIVE>    -- Confirmed via dialogue: active users only
+        and len items <= 50                    -- Confirmed via dialogue: max 50 items per order
+    post res in set dom orders
+        and orders(res).userId = userId;
+```
+
+This comment structure becomes the source information for regenerating a natural language specification in the final step.
+
+After generation, a gap analysis is performed. "Requirements from the original document that were mapped to VDM-SL," "requirements that could not be mapped (UI requirements, performance requirements, and other non-functional requirements)," and "elements that AI inferred" are explicitly distinguished. Inferred elements always require user confirmation.
+
+*Step 5: Mechanical Verification*
+
+The generated VDM-SL specification is mechanically verified using tools such as VDMJ. Syntax checking, type checking, and proof obligation (PO) generation are executed automatically, and results are explained in natural language. For example: "When CreateOrder returns a value of type OrderId, can you guarantee that this value is included in the keys of orders?" — presented in a form understandable without formal methods knowledge.
+
+Issues discovered here loop back to Step 3's dialogue. This loop ensures the specification's internal consistency.
+
+*Step 6: Reverse Conversion from VDM-SL to Natural Language Specification*
+
+The verified VDM-SL specification is reverse-converted into a natural language specification document (Markdown) that domain experts and non-technical stakeholders can review. The conversion rules constitute a faithful translation, not a simplification. Type definitions become "what things exist." State definitions become "what the system remembers." Pre-conditions become "prerequisites — what must be true before the operation." Post-conditions become "guarantees — what becomes true after a successful operation."
+
+The generated specification document has a structure of: overview, glossary, data model, operations, business rules, and constraints and limitations. Each element maintains traceability to the VDM-SL source. Quality checks verify completeness (every VDM-SL element appears in the document), faithfulness (the natural language accurately conveys the VDM-SL semantics), readability (no formal notation leaks into the prose), and consistency (terms are used uniformly throughout).
+
+Critically, **this natural language specification is a derived artifact, and the VDM-SL is the source of truth.** This is stated explicitly in the document header. As a result, modification requests arising from stakeholder review flow back through the cycle of VDM-SL update → verification → regeneration, preserving specification rigor.
+
+The overall structure of this MD→VDM-SL→MD pipeline is as follows:
+
+```
+Incomplete MD specification
+    ↓ Structure analysis and requirement classification
+    ↓ VDM-SL conversion attempt → Systematic ambiguity detection
+    ↓ Priority-ordered dialogue (3–5 rounds)
+    ↓ VDM-SL generation with traceability
+    ↓ Mechanical verification (VDMJ)
+    ↓ Reverse conversion to natural language specification (MD)
+Verified natural language specification (VDM-SL is source of truth)
+    ↓ Stakeholder review
+    ↓ Modification requests → Reflected in VDM-SL (cycle restarts)
+```
+
+It was noted earlier that Phase 1 dialogue is iterative. This pipeline provides the concrete mechanism for that iteration. Domain experts' tacit knowledge cannot be fully elicited in a single dialogue session — some rules only surface when the system is actually used. The review cycle mediated by natural language specifications enables tacit knowledge to be progressively formalized.
+
 **Phase 2: AI-Driven Technology Selection and Architecture — Integrating Non-Functional Requirements**
 
 The formal specification from Phase 1 defines *what* to compute, but not at what scale, speed, or cost. Phase 2 integrates **non-functional requirements** provided separately by the human, combining them with the formal specification to make technical design decisions.

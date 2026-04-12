@@ -201,7 +201,129 @@ Invariants preserved:
   - No overselling possible (locking + atomicity)
 ```
 
-### Step 6: Address Design Questions from Phase 1
+### Step 6: Define Inter-Component Communication Protocol
+
+**This step is CRITICAL for multi-component systems.** If the architecture includes separate frontend/backend components, WebSocket connections, event buses, or any form of inter-component messaging, you MUST produce a concrete protocol specification. Implementation agents will use this specification verbatim — any ambiguity here causes integration bugs.
+
+**6a. Message Type Registry (Single Source of Truth)**
+
+Define every message type string that flows between components. These strings are the canonical names — implementation agents must use them exactly as specified.
+
+```
+Message Type Registry:
+  Client → Server:
+    - "escalation_request"    — user message that needs operator help
+    - "user_message"          — direct user input
+  
+  Operator → Server:
+    - "lock_request"          — operator claims a ticket
+    - "unlock_request"        — operator releases a ticket
+    - "reply_manual"          — operator sends manual answer
+    - "get_tickets"           — operator requests ticket list
+
+  Server → Client:
+    - "answer"                — response to user (auto, manual, or LLM)
+    - "operator_connected"    — notification that operator is available
+    - "waiting"               — ticket is queued
+
+  Server → Operator:
+    - "tickets_list"          — full list of current tickets
+    - "new_ticket"            — newly escalated ticket
+    - "ticket_locked"         — another operator locked a ticket
+    - "lock_success"          — lock acquired successfully
+    - "ticket_resolved"       — ticket has been resolved
+```
+
+**6b. Payload Structure Specification**
+
+For each message type, define the exact field names, types, and which fields are required vs. optional. Specify the naming convention (camelCase, snake_case) and enforce it consistently.
+
+```
+Naming convention: camelCase for all JSON fields
+
+"escalation_request" payload:
+  {
+    type: string        — "escalation_request" (required)
+    userMessage: string — the user's input text (required)
+    sessionId: string   — unique session identifier (required)
+    candidates: array   — scored QA candidates (required, may be empty)
+      [{ answer: string, score: number, keywords: string[] }]
+    tier: string        — "operator_and_llm" | "operator_only" (required)
+    timestamp: string   — ISO 8601 format (required)
+  }
+
+"reply_manual" payload:
+  {
+    type: string        — "reply_manual" (required)
+    ticketId: string    — (required)
+    content: string     — the answer text (required, NOT "answer")
+  }
+```
+
+For fields where naming could be ambiguous (e.g., the text of an answer), choose ONE canonical name and document it:
+- The operator's reply text → always `content` (never `answer`, `text`, `message`, or `reply`)
+- The ticket identifier → always `ticketId` (never `ticket_id`, `id`, or `ticketID`)
+
+**6c. Shared Module API Specification**
+
+For any code module shared across components (e.g., a scoring engine used by both server and client), define the exact function signatures:
+
+```
+Shared Module: Scorer (shared/scorer.js)
+
+  scoreAll(userMessage: string, qaEntries: QAEntry[], idfMap: Record<string, number>): ScoredResult[]
+    — Returns array sorted by score descending
+    — Each ScoredResult: { answer: string, score: number, keywords: string[] }
+
+  decide(bestScore: number, t1: number, t2: number): "auto_reply" | "operator_and_llm" | "operator_only"
+    — Arguments are three SCALAR values (not an object, not an array)
+    — Pre-condition: t1 > t2
+    — Returns a string action name
+
+  Module loading:
+    — Browser: <script src="scorer.js"> → window.Scorer.scoreAll(), window.Scorer.decide()
+    — Node.js: import { scoreAll, decide } from './scorer.mjs'
+```
+
+**6d. State Machine Specification**
+
+If the system has stateful entities (tickets, orders, sessions), define the state machine with all valid transitions:
+
+```
+Ticket State Machine:
+  States: Waiting → Locked → Resolved
+  
+  Valid transitions:
+    Waiting → Locked    (via lock_request, requires operatorId)
+    Locked  → Waiting   (via unlock_request, only by locking operator)
+    Locked  → Resolved  (via reply_manual or reply_select)
+    Waiting → Resolved  (via LLM auto-response, no lock needed)
+  
+  Invalid transitions (must be rejected):
+    Resolved → any      (terminal state)
+    Waiting → Resolved via manual reply (must lock first)
+```
+
+**6e. Nullable Field Specification**
+
+Explicitly list fields that may be null/undefined, especially for data that comes from optional operations (e.g., promoted QA entries that bypass normal creation):
+
+```
+Nullable fields:
+  QAEntry.category    — null when promoted from resolved log (no category assigned)
+  Ticket.lockedBy     — null when status is Waiting
+  Ticket.resolvedAt   — null when not yet resolved
+```
+
+Implementation agents MUST add null guards when accessing these fields.
+
+**Why this step matters:**
+
+Without this protocol specification, each implementation agent independently "guesses" message type names, field names, and function signatures. When Agent A generates the server and Agent B generates the client, their guesses will diverge. The protocol specification eliminates guessing by providing canonical names and structures that all agents must follow verbatim.
+
+---
+
+### Step 7: Address Design Questions from Phase 1
 For each design question surfaced in Phase 1, provide an explicit answer:
 
 **Example design questions and answers:**
@@ -214,7 +336,7 @@ For each design question surfaced in Phase 1, provide an explicit answer:
 - Q: "What happens if a variant is deleted while an order is being processed?"
   A: "Foreign key constraint prevents deletion. If deletion is a valid business need, we'll soft-delete instead (mark as inactive) and update ProcessOrder's pre-condition to check for active variants."
 
-### Step 7: Plan for Testing Strategy
+### Step 8: Plan for Testing Strategy
 VDM-SL operations suggest test cases. Design how you'll test:
 
 **Property-based tests:**
@@ -241,7 +363,7 @@ Verify: If pre-condition is met, post-condition is guaranteed.
 If pre-condition is violated, operation fails safely (exception, not undefined behavior).
 ```
 
-### Step 8: Document Design Rationale
+### Step 9: Document Design Rationale
 Produce a design document with:
 1. **Executive Summary:** What this system does and why this architecture
 2. **Non-Functional Requirements:** Scale, performance, availability, cost (input to design)
@@ -249,11 +371,12 @@ Produce a design document with:
 4. **Technology Stack:** Languages, frameworks, databases, deployment (with justification)
 5. **Data Model:** Tables/collections, relationships, constraints (mapped from VDM-SL)
 6. **Service Design:** For each VDM-SL operation, how it's implemented (API endpoint, DB transactions, error handling)
-7. **Design Decisions & Trade-offs:** Major choices and what you accepted/rejected
-8. **Invariant Mapping:** Which VDM-SL invariants are enforced where (DB? App? API?)
-9. **Testing Strategy:** How you'll verify correctness (property tests, integration tests, concurrency scenarios)
-10. **Operational Concerns:** Logging, monitoring, alerting, disaster recovery
-11. **Risks & Mitigation:** Known limitations and how you'll handle them
+7. **Inter-Component Protocol Specification:** Message type registry, payload structures, shared module APIs, state machines, naming conventions, nullable fields (Step 6 output — this section is the canonical reference for all implementation agents)
+8. **Design Decisions & Trade-offs:** Major choices and what you accepted/rejected
+9. **Invariant Mapping:** Which VDM-SL invariants are enforced where (DB? App? API?)
+10. **Testing Strategy:** How you'll verify correctness (property tests, integration tests, contract tests, concurrency scenarios)
+11. **Operational Concerns:** Logging, monitoring, alerting, disaster recovery
+12. **Risks & Mitigation:** Known limitations and how you'll handle them
 
 ## VDM-SL to Implementation Mapping
 
@@ -347,6 +470,12 @@ Example: PlaceOrder touches [Order module, Inventory module, Payment module]
 5. **No concurrency design:** If VDM-SL operations can run concurrently (and they often can), design must address it. Locking? Eventual consistency? Queue-based serialization?
 
 6. **Test design that ignores edge cases from Phase 1:** Phase 1 surfaced edge cases (empty sets, boundary values, concurrent operations). Phase 2 design must show how each is handled.
+
+7. **Missing inter-component protocol specification:** If the system has multiple components (frontend, backend, WebSocket server, worker) and the design document does not include a concrete message type registry with exact string literals and payload structures, implementation agents WILL invent their own names independently. This is the single most common source of integration bugs in AI-driven multi-component development. Always produce Step 6 output.
+
+8. **Shared module signatures not specified:** If a module (e.g., scorer, validator) is used by multiple components, and the design does not specify the exact function signature (parameter order, types, return type), each implementation agent will guess differently. `decide(scores, config)` vs `decide(bestScore, t1, t2)` is a real example. Specify signatures down to parameter names.
+
+9. **Naming convention not declared:** If the design does not explicitly state "all JSON fields use camelCase" (or snake_case), AI agents will mix conventions. One agent generates `ticketId`, another generates `ticket_id`. Declare the convention once in the protocol spec.
 
 ## Parameters (Input)
 

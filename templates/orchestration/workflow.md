@@ -151,12 +151,27 @@ modules/order/
 ├── preconditions.txt          # Preconditions for each operation
 ├── postconditions.txt         # Postconditions for each operation
 └── dependencies.txt           # Which ops call which external modules
+
+shared/
+├── PROTOCOL.md                # Inter-component protocol specification
+│                              #   - Message type registry (exact strings)
+│                              #   - Payload structures (field names, types)
+│                              #   - State machine definitions
+│                              #   - Naming conventions (camelCase/snake_case)
+│                              #   - Nullable field annotations
+└── API-SIGNATURES.md          # Shared module function signatures
+                               #   - Exact parameter order and types
+                               #   - Return value structure
+                               #   - Module loading patterns (ESM/browser)
 ```
+
+**CRITICAL:** The `shared/PROTOCOL.md` and `shared/API-SIGNATURES.md` are the canonical references for ALL implementation agents. Every message type string, field name, and function signature in these files must be used verbatim by Phase 3 agents. Without these files, independent implementation agents will invent their own names, causing integration bugs.
 
 **Human Checkpoints:**
 
 - ✅ Design review: "Does this design approach make sense?"
 - ✅ Dependency check: "Are contract dependencies clear?"
+- ✅ Protocol review: "Are all message types, field names, and shared APIs specified?"
 
 **Practical Implementation (TODAY):**
 
